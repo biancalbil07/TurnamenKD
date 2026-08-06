@@ -94,6 +94,36 @@ export const LoginModal: React.FC<LoginModalProps> = ({ panitiaMembers, onLoginS
             />
           </div>
 
+          {/* Quick Account Hint */}
+          <div className="p-2.5 bg-slate-50 border border-slate-200 rounded-xl space-y-1">
+            <div className="font-extrabold text-[10px] text-slate-600 uppercase tracking-wider flex items-center justify-between">
+              <span>Akun Login (Default):</span>
+              <span className="text-[10px] text-red-600 font-bold font-mono">Pass: 123</span>
+            </div>
+            <div className="flex items-center gap-2 text-[10px]">
+              <button
+                type="button"
+                onClick={() => {
+                  setUsername('admin');
+                  setPassword('123');
+                }}
+                className="px-2 py-0.5 bg-red-100 hover:bg-red-200 text-red-700 font-bold rounded text-[10px] transition"
+              >
+                Admin Master: admin
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setUsername('panitia');
+                  setPassword('123');
+                }}
+                className="px-2 py-0.5 bg-slate-200 hover:bg-slate-300 text-slate-700 font-bold rounded text-[10px] transition"
+              >
+                Anggota: panitia
+              </button>
+            </div>
+          </div>
+
           <button
             type="submit"
             className="w-full py-3 bg-red-600 hover:bg-red-700 text-white font-black rounded-xl text-sm shadow-lg shadow-red-600/25 transition-all flex items-center justify-center gap-2 mt-2"

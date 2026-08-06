@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { RefreshCw, ShieldCheck } from 'lucide-react';
 import { Header } from './components/Header';
 import { BracketView } from './components/BracketView';
 import { ScoreModal } from './components/ScoreModal';
@@ -26,6 +27,7 @@ import { getSupabaseClient } from './lib/supabase';
 export default function App() {
   const [dbState, setDbState] = useState(getAppData());
   const [activeTab, setActiveTab] = useState('bracket');
+  const [isAuthChecking, setIsAuthChecking] = useState(true);
   
   // Modals
   const [selectedMatch, setSelectedMatch] = useState<Match | null>(null);
@@ -34,39 +36,97 @@ export default function App() {
   const [showProfileModal, setShowProfileModal] = useState(false);
 
   // Active Logged-in User Session State
-  const [currentUser, setCurrentUser] = useState<PanitiaMember | null>(() => {
-    const saved = localStorage.getItem('turnamen_kd_logged_user');
-    if (saved) {
-      try {
-        return JSON.parse(saved);
-      } catch {
-        return null;
-      }
-    }
-    return null;
-  });
+  const [currentUser, setCurrentUser] = useState<PanitiaMember | null>(null);
 
   useEffect(() => {
-    initDatabase().then(() => {
-      const appData = getAppData();
-      setDbState({ ...appData });
+    let isMounted = true;
 
-      // If no user session saved yet, default to first user or prompt login
-      const saved = localStorage.getItem('turnamen_kd_logged_user');
-      if (!saved && appData.panitiaMembers.length > 0) {
-        // Auto select first user if none logged in yet
-        const defaultUser = appData.panitiaMembers[0];
-        setCurrentUser(defaultUser);
-        localStorage.setItem('turnamen_kd_logged_user', JSON.stringify(defaultUser));
+    const initAuthAndDb = async () => {
+      try {
+        await initDatabase();
+        const appData = getAppData();
+        if (isMounted) setDbState({ ...appData });
+
+        // Check saved user session in localStorage
+        const saved = localStorage.getItem('turnamen_kd_logged_user');
+        if (saved) {
+          try {
+            const parsedUser: PanitiaMember = JSON.parse(saved);
+            // Verify if user still exists in database and is active
+            const activeMember = appData.panitiaMembers.find(
+              (m) => (m.id === parsedUser.id || m.username.toLowerCase() === parsedUser.username.toLowerCase()) && m.status === 'active'
+            );
+
+            if (activeMember) {
+              if (isMounted) setCurrentUser(activeMember);
+              localStorage.setItem('turnamen_kd_logged_user', JSON.stringify(activeMember));
+            } else {
+              // User no longer exists or status is inactive -> Force logout
+              if (isMounted) setCurrentUser(null);
+              localStorage.removeItem('turnamen_kd_logged_user');
+            }
+          } catch {
+            if (isMounted) setCurrentUser(null);
+            localStorage.removeItem('turnamen_kd_logged_user');
+          }
+        } else {
+          // No saved session -> Force Login Screen (No auto-select!)
+          if (isMounted) setCurrentUser(null);
+        }
+      } catch (err) {
+        console.error('Initialization error:', err);
+      } finally {
+        if (isMounted) setIsAuthChecking(false);
       }
-    });
+    };
 
-    const unsubscribe = subscribeDataChanges(() => {
-      setDbState({ ...getAppData() });
+    initAuthAndDb();
+
+    // Supabase Auth listener for session changes & token invalidation
+    const supabase = getSupabaseClient();
+    let authListener: any = null;
+    if (supabase) {
+      const { data } = supabase.auth.onAuthStateChange((event, session) => {
+        if (event === 'SIGNED_OUT' || (!session && event !== 'INITIAL_SESSION')) {
+          if (isMounted) {
+            setCurrentUser(null);
+            localStorage.removeItem('turnamen_kd_logged_user');
+          }
+        }
+      });
+      authListener = data?.subscription;
+    }
+
+    // Subscribe to real-time DB changes
+    const unsubscribeDb = subscribeDataChanges(() => {
+      const updatedData = getAppData();
+      if (isMounted) setDbState({ ...updatedData });
+
+      // Verify currently logged in user status in real-time
+      const currentSaved = localStorage.getItem('turnamen_kd_logged_user');
+      if (currentSaved && isMounted) {
+        try {
+          const parsed = JSON.parse(currentSaved);
+          const liveUser = updatedData.panitiaMembers.find(
+            (m) => m.id === parsed.id || m.username.toLowerCase() === parsed.username.toLowerCase()
+          );
+          if (!liveUser || liveUser.status !== 'active') {
+            setCurrentUser(null);
+            localStorage.removeItem('turnamen_kd_logged_user');
+          } else {
+            setCurrentUser(liveUser);
+            localStorage.setItem('turnamen_kd_logged_user', JSON.stringify(liveUser));
+          }
+        } catch {
+          // ignore
+        }
+      }
     });
 
     return () => {
-      unsubscribe();
+      isMounted = false;
+      if (authListener) authListener.unsubscribe();
+      unsubscribeDb();
     };
   }, []);
 
@@ -84,6 +144,9 @@ export default function App() {
   const handleLoginSuccess = (user: PanitiaMember) => {
     setCurrentUser(user);
     localStorage.setItem('turnamen_kd_logged_user', JSON.stringify(user));
+    if (user.role !== 'master') {
+      setActiveTab('bracket');
+    }
   };
 
   const handleLogout = async () => {
@@ -97,6 +160,10 @@ export default function App() {
     }
     setCurrentUser(null);
     localStorage.removeItem('turnamen_kd_logged_user');
+    setActiveTab('bracket');
+    setShowSettingsModal(false);
+    setShowNewTournModal(false);
+    setShowProfileModal(false);
   };
 
   const handleUserUpdated = (updatedUser: PanitiaMember) => {
@@ -105,7 +172,57 @@ export default function App() {
     setDbState({ ...getAppData() });
   };
 
-  // If not logged in, render Login Modal screen
+  // RBAC Tab Protection: Non-master user cannot access committee, audit, or time_slots
+  const isMaster = currentUser?.role === 'master';
+
+  useEffect(() => {
+    if (currentUser && !isMaster && (activeTab === 'committee' || activeTab === 'audit' || activeTab === 'time_slots')) {
+      setActiveTab('bracket');
+    }
+  }, [currentUser, isMaster, activeTab]);
+
+  const handleTabChange = (tab: string) => {
+    if (!isMaster && (tab === 'committee' || tab === 'audit' || tab === 'time_slots')) {
+      setActiveTab('bracket');
+      return;
+    }
+    setActiveTab(tab);
+  };
+
+  const handleDeleteTournament = async (id: string) => {
+    if (!currentUser || !isMaster) return;
+    await deleteTournament(id, { name: currentUser.name, role: currentUser.role });
+    setDbState({ ...getAppData() });
+  };
+
+  // 1. Loading State Screen (Prevents visual flicker before auth state is checked)
+  if (isAuthChecking) {
+    return (
+      <div className="min-h-screen bg-slate-950 font-sans text-white flex flex-col items-center justify-center p-4">
+        <div className="flex flex-col items-center gap-4 animate-in fade-in zoom-in-95 duration-300">
+          <div className="relative">
+            <div className="w-16 h-16 bg-red-600 rounded-2xl flex items-center justify-center font-black text-2xl italic shadow-2xl shadow-red-600/50">
+              KD
+            </div>
+            <div className="absolute -inset-1 rounded-2xl border-2 border-red-500/50 animate-ping pointer-events-none"></div>
+          </div>
+          
+          <div className="text-center space-y-1">
+            <h2 className="text-lg font-black tracking-wider uppercase flex items-center justify-center gap-2">
+              <span>TURNAMEN KD</span>
+              <ShieldCheck className="w-4 h-4 text-red-500" />
+            </h2>
+            <p className="text-xs text-slate-400 font-medium flex items-center justify-center gap-2">
+              <RefreshCw className="w-3.5 h-3.5 animate-spin text-red-500" />
+              <span>Memeriksa Status Autentikasi & Sesi User...</span>
+            </p>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  // 2. Auth Guard: If not authenticated, render Login Modal screen
   if (!currentUser) {
     return (
       <div className="min-h-screen bg-slate-950 font-sans text-slate-900 flex items-center justify-center p-4">
@@ -116,22 +233,6 @@ export default function App() {
       </div>
     );
   }
-
-  // RBAC Tab Protection: Anggota biasa cannot access committee or audit
-  const isMaster = currentUser.role === 'master';
-  const handleTabChange = (tab: string) => {
-    if (!isMaster && (tab === 'committee' || tab === 'audit' || tab === 'time_slots')) {
-      setActiveTab('bracket');
-      return;
-    }
-    setActiveTab(tab);
-  };
-
-  const handleDeleteTournament = async (id: string) => {
-    if (!currentUser) return;
-    await deleteTournament(id, { name: currentUser.name, role: currentUser.role });
-    setDbState({ ...getAppData() });
-  };
 
   return (
     <div className="min-h-screen bg-slate-100 font-sans text-slate-900 flex flex-col selection:bg-red-500 selection:text-white">
