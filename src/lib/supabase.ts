@@ -164,6 +164,10 @@ CREATE TABLE IF NOT EXISTS public.telegram_settings (
   updated_at TIMESTAMPTZ DEFAULT NOW()
 );
 
+-- Migration support for existing telegram_settings tables
+ALTER TABLE public.telegram_settings ADD COLUMN IF NOT EXISTS bot1_topic_id TEXT;
+ALTER TABLE public.telegram_settings ADD COLUMN IF NOT EXISTS bot2_topic_id TEXT;
+
 -- Enable Realtime for all tables
 ALTER PUBLICATION supabase_realtime ADD TABLE public.tournaments;
 ALTER PUBLICATION supabase_realtime ADD TABLE public.teams;

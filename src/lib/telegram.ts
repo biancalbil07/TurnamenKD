@@ -2,30 +2,93 @@ import { TelegramSettings, Match, Tournament } from '../types';
 import { getSupabaseClient } from './supabase';
 
 /**
- * Extracts numeric message_thread_id (Topic ID) from string input or Telegram link.
- * Example inputs:
- * - "123" -> 123
- * - "https://t.me/c/1234567890/123" -> 123
- * - "https://t.me/groupname/999" -> 999
+ * Extracts Telegram chatId and message_thread_id (Topic ID) from URLs or strings.
+ * Supports:
+ * - Public groups: https://t.me/acara17kd or https://t.me/acara17kd/4 -> chatId: "@acara17kd", topicId: 4
+ * - Private groups: https://t.me/c/1234567890/4 -> chatId: "-1001234567890", topicId: 4
+ * - Direct IDs/Usernames: "@acara17kd", "-1001234567890", "123"
  */
-export function parseTelegramTopicId(input?: string): number | undefined {
-  if (!input) return undefined;
-  const trimmed = input.trim();
-  if (!trimmed) return undefined;
+function extractTelegramLinkInfo(urlStr: string): { chatId?: string; topicId?: number } {
+  if (!urlStr) return {};
+  const trimmed = urlStr.trim();
+  if (!trimmed) return {};
 
-  // Check if input is a Telegram URL or contains slashes
-  if (trimmed.includes('/') || trimmed.includes('t.me')) {
-    const clean = trimmed.split('?')[0].split('#')[0];
+  try {
+    let clean = trimmed.split('?')[0].split('#')[0];
+    clean = clean.replace(/^https?:\/\//i, '').replace(/^(t|telegram)\.me\//i, '');
+    clean = clean.replace(/^\/+|\/+$/g, '');
+
     const parts = clean.split('/').filter(Boolean);
-    const lastPart = parts[parts.length - 1];
-    if (lastPart && /^\d+$/.test(lastPart)) {
-      return parseInt(lastPart, 10);
+    if (parts.length === 0) return {};
+
+    if (parts[0] === 'c' && parts.length >= 2) {
+      const rawId = parts[1];
+      const chatId = rawId.startsWith('-100') ? rawId : `-100${rawId}`;
+      let topicId: number | undefined = undefined;
+      if (parts.length >= 3 && /^\d+$/.test(parts[2])) {
+        topicId = parseInt(parts[2], 10);
+      }
+      return { chatId, topicId };
+    } else {
+      if (!parts[0].startsWith('@') && /^\d+$/.test(parts[0])) {
+        return { chatId: parts[0] };
+      }
+      const username = parts[0].startsWith('@') ? parts[0] : `@${parts[0]}`;
+      let topicId: number | undefined = undefined;
+      if (parts.length >= 2 && /^\d+$/.test(parts[1])) {
+        topicId = parseInt(parts[1], 10);
+      }
+      return { chatId: username, topicId };
+    }
+  } catch {
+    return {};
+  }
+}
+
+export function parseTelegramChatId(chatInput?: string, topicInput?: string): string {
+  const c = (chatInput || '').trim();
+  const t = (topicInput || '').trim();
+
+  if (c.includes('t.me') || c.startsWith('http://') || c.startsWith('https://')) {
+    const info = extractTelegramLinkInfo(c);
+    if (info.chatId) return info.chatId;
+  }
+
+  if (c) {
+    if (c.startsWith('@') || c.startsWith('-') || /^\d+$/.test(c)) {
+      return c;
+    }
+    if (/^[a-zA-Z0-9_]{5,}$/.test(c)) {
+      return `@${c}`;
+    }
+    return c;
+  }
+
+  if (t.includes('t.me') || t.startsWith('http://') || t.startsWith('https://')) {
+    const info = extractTelegramLinkInfo(t);
+    if (info.chatId) return info.chatId;
+  }
+
+  return '';
+}
+
+export function parseTelegramTopicId(topicInput?: string, chatInput?: string): number | undefined {
+  const t = (topicInput || '').trim();
+  const c = (chatInput || '').trim();
+
+  if (t) {
+    if (t.includes('t.me') || t.startsWith('http://') || t.startsWith('https://')) {
+      const info = extractTelegramLinkInfo(t);
+      if (info.topicId !== undefined) return info.topicId;
+    }
+    if (/^\d+$/.test(t)) {
+      return parseInt(t, 10);
     }
   }
 
-  // If input is a direct integer string
-  if (/^\d+$/.test(trimmed)) {
-    return parseInt(trimmed, 10);
+  if (c.includes('t.me') || c.startsWith('http://') || c.startsWith('https://')) {
+    const info = extractTelegramLinkInfo(c);
+    if (info.topicId !== undefined) return info.topicId;
   }
 
   return undefined;
@@ -147,19 +210,25 @@ export async function syncTelegramSettingsFromSupabase() {
  */
 export async function sendTelegramBot1Message(text: string): Promise<{ success: boolean; message: string }> {
   const settings = getTelegramSettings();
-  if (!settings.bot1_enabled || !settings.bot1_token || !settings.bot1_chat_id) {
+  if (!settings.bot1_enabled || !settings.bot1_token || (!settings.bot1_chat_id && !settings.bot1_topic_id)) {
     return { success: false, message: 'Bot 1 Telegram belum diaktifkan atau data Token/Chat ID belum lengkap.' };
   }
 
   try {
+    const targetChatId = parseTelegramChatId(settings.bot1_chat_id, settings.bot1_topic_id);
+    const threadId = parseTelegramTopicId(settings.bot1_topic_id, settings.bot1_chat_id);
+
+    if (!targetChatId) {
+      return { success: false, message: 'Bot 1 Chat ID tidak valid. Masukkan username (misal @nama_grup), ID (-100xxx), atau Link Topic Telegram.' };
+    }
+
     const url = `https://api.telegram.org/bot${settings.bot1_token}/sendMessage`;
     const payload: Record<string, any> = {
-      chat_id: settings.bot1_chat_id,
+      chat_id: targetChatId,
       text: text,
       parse_mode: 'Markdown',
     };
 
-    const threadId = parseTelegramTopicId(settings.bot1_topic_id);
     if (threadId !== undefined) {
       payload.message_thread_id = threadId;
     }
@@ -175,8 +244,8 @@ export async function sendTelegramBot1Message(text: string): Promise<{ success: 
       return {
         success: true,
         message: threadId !== undefined
-          ? `Notifikasi Bot 1 berhasil dikirim ke Topic Chat (#${threadId})!`
-          : 'Notifikasi Bot 1 (Hasil Pertandingan) berhasil dikirim!',
+          ? `Notifikasi Bot 1 berhasil dikirim ke Topic Chat (${targetChatId} #${threadId})!`
+          : `Notifikasi Bot 1 berhasil dikirim ke (${targetChatId})!`,
       };
     } else {
       return { success: false, message: `Bot 1 Gagal: ${data.description || 'Unknown error'}` };
@@ -192,18 +261,24 @@ export async function sendTelegramBot1Message(text: string): Promise<{ success: 
  */
 export async function sendTelegramBot2Photo(imageBlob: Blob, caption: string): Promise<{ success: boolean; message: string }> {
   const settings = getTelegramSettings();
-  if (!settings.bot2_enabled || !settings.bot2_token || !settings.bot2_chat_id) {
+  if (!settings.bot2_enabled || !settings.bot2_token || (!settings.bot2_chat_id && !settings.bot2_topic_id)) {
     return { success: false, message: 'Bot 2 Telegram (Update Bagan) belum diaktifkan atau data Token/Chat ID belum lengkap.' };
   }
 
   try {
+    const targetChatId = parseTelegramChatId(settings.bot2_chat_id, settings.bot2_topic_id);
+    const threadId = parseTelegramTopicId(settings.bot2_topic_id, settings.bot2_chat_id);
+
+    if (!targetChatId) {
+      return { success: false, message: 'Bot 2 Chat ID tidak valid. Masukkan username (misal @nama_grup), ID (-100xxx), atau Link Topic Telegram.' };
+    }
+
     const url = `https://api.telegram.org/bot${settings.bot2_token}/sendPhoto`;
     const formData = new FormData();
-    formData.append('chat_id', settings.bot2_chat_id);
+    formData.append('chat_id', targetChatId);
     formData.append('photo', imageBlob, 'bagan_turnamen.png');
     formData.append('caption', caption);
 
-    const threadId = parseTelegramTopicId(settings.bot2_topic_id);
     if (threadId !== undefined) {
       formData.append('message_thread_id', String(threadId));
     }
@@ -218,8 +293,8 @@ export async function sendTelegramBot2Photo(imageBlob: Blob, caption: string): P
       return {
         success: true,
         message: threadId !== undefined
-          ? `Gambar bagan berhasil dikirim ke Topic Chat Bot 2 (#${threadId})!`
-          : 'Gambar bagan terbaru berhasil dikirim ke Telegram Bot 2!',
+          ? `Gambar bagan berhasil dikirim ke Topic Chat Bot 2 (${targetChatId} #${threadId})!`
+          : `Gambar bagan terbaru berhasil dikirim ke Telegram Bot 2 (${targetChatId})!`,
       };
     } else {
       return { success: false, message: `Bot 2 Gagal kirim gambar: ${data.description || 'Unknown error'}` };

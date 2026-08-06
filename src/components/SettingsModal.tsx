@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { X, Database, Send, Code, Save, RefreshCw, CheckCircle, AlertCircle, Copy, Check, ShieldAlert, Image } from 'lucide-react';
 import { getSupabaseConfig, saveSupabaseConfig, testSupabaseConnection, SUPABASE_SQL_SCHEMA } from '../lib/supabase';
-import { getTelegramSettings, saveTelegramSettings, sendTelegramBot1Message, sendTelegramBot2Photo } from '../lib/telegram';
+import { getTelegramSettings, saveTelegramSettings, sendTelegramBot1Message, sendTelegramBot2Photo, parseTelegramChatId, parseTelegramTopicId } from '../lib/telegram';
 import { resetTournamentData } from '../lib/db';
 import { Role } from '../types';
 
@@ -46,6 +46,12 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
   const [bot2Enabled, setBot2Enabled] = useState(currentTele.bot2_enabled);
   const [bot2TestMsg, setBot2TestMsg] = useState<{ success: boolean; message: string } | null>(null);
   const [isTestingBot2, setIsTestingBot2] = useState(false);
+
+  // Parsed Telegram values live
+  const parsedBot1Chat = parseTelegramChatId(bot1ChatId, bot1TopicId);
+  const parsedBot1Topic = parseTelegramTopicId(bot1TopicId, bot1ChatId);
+  const parsedBot2Chat = parseTelegramChatId(bot2ChatId, bot2TopicId);
+  const parsedBot2Topic = parseTelegramTopicId(bot2TopicId, bot2ChatId);
 
   // SQL Copy state
   const [copiedSQL, setCopiedSQL] = useState(false);
@@ -326,14 +332,19 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                   </div>
 
                   <div>
-                    <label className="block font-semibold text-slate-700 mb-1">Bot 1 Chat ID</label>
+                    <label className="block font-semibold text-slate-700 mb-1">Bot 1 Chat ID / Link Chat</label>
                     <input
                       type="text"
-                      placeholder="-1001234567890"
+                      placeholder="-1001234567890 atau https://t.me/acara17kd"
                       value={bot1ChatId}
                       onChange={(e) => setBot1ChatId(e.target.value)}
                       className="w-full px-3 py-2 bg-white border border-slate-300 rounded-xl font-mono text-slate-800"
                     />
+                    {parsedBot1Chat && (
+                      <p className="text-[11px] font-semibold text-emerald-700 mt-1 flex items-center gap-1">
+                        ✓ Target Chat: <code className="bg-emerald-100 px-1.5 py-0.5 rounded text-emerald-900 font-bold">{parsedBot1Chat}</code>
+                      </p>
+                    )}
                   </div>
                 </div>
 
@@ -343,13 +354,18 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                   </label>
                   <input
                     type="text"
-                    placeholder="123 atau https://t.me/c/1234567890/123"
+                    placeholder="123 atau https://t.me/acara17kd/4"
                     value={bot1TopicId}
                     onChange={(e) => setBot1TopicId(e.target.value)}
                     className="w-full px-3 py-2 bg-white border border-slate-300 rounded-xl font-mono text-slate-800"
                   />
+                  {parsedBot1Topic !== undefined && (
+                    <p className="text-[11px] font-semibold text-blue-800 mt-1 flex items-center gap-1">
+                      ✓ Topic Thread: <code className="bg-blue-100 px-1.5 py-0.5 rounded text-blue-900 font-bold">#{parsedBot1Topic}</code>
+                    </p>
+                  )}
                   <p className="text-[10px] text-blue-900 mt-1 italic font-medium">
-                    * Masukkan Topic ID (misal: 123) atau tempelkan (paste) langsung Link Topic Chat Telegram Anda (misal: https://t.me/c/1234567890/123).
+                    * Masukkan Topic ID (misal: 4) atau tempelkan (paste) langsung Link Topic Chat Telegram Anda (misal: https://t.me/acara17kd/4).
                   </p>
                 </div>
 
@@ -427,14 +443,19 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                   </div>
 
                   <div>
-                    <label className="block font-semibold text-slate-700 mb-1">Bot 2 Chat ID</label>
+                    <label className="block font-semibold text-slate-700 mb-1">Bot 2 Chat ID / Link Chat</label>
                     <input
                       type="text"
-                      placeholder="-1009876543210"
+                      placeholder="-1009876543210 atau https://t.me/acara17kd"
                       value={bot2ChatId}
                       onChange={(e) => setBot2ChatId(e.target.value)}
                       className="w-full px-3 py-2 bg-white border border-slate-300 rounded-xl font-mono text-slate-800"
                     />
+                    {parsedBot2Chat && (
+                      <p className="text-[11px] font-semibold text-emerald-700 mt-1 flex items-center gap-1">
+                        ✓ Target Chat: <code className="bg-emerald-100 px-1.5 py-0.5 rounded text-emerald-900 font-bold">{parsedBot2Chat}</code>
+                      </p>
+                    )}
                   </div>
                 </div>
 
@@ -444,13 +465,18 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                   </label>
                   <input
                     type="text"
-                    placeholder="123 atau https://t.me/c/1234567890/123"
+                    placeholder="123 atau https://t.me/acara17kd/8"
                     value={bot2TopicId}
                     onChange={(e) => setBot2TopicId(e.target.value)}
                     className="w-full px-3 py-2 bg-white border border-slate-300 rounded-xl font-mono text-slate-800"
                   />
+                  {parsedBot2Topic !== undefined && (
+                    <p className="text-[11px] font-semibold text-purple-800 mt-1 flex items-center gap-1">
+                      ✓ Topic Thread: <code className="bg-purple-100 px-1.5 py-0.5 rounded text-purple-900 font-bold">#{parsedBot2Topic}</code>
+                    </p>
+                  )}
                   <p className="text-[10px] text-purple-900 mt-1 italic font-medium">
-                    * Masukkan Topic ID (misal: 123) atau tempelkan (paste) langsung Link Topic Chat Telegram Anda (misal: https://t.me/c/1234567890/123).
+                    * Masukkan Topic ID (misal: 8) atau tempelkan (paste) langsung Link Topic Chat Telegram Anda (misal: https://t.me/acara17kd/8).
                   </p>
                 </div>
 
