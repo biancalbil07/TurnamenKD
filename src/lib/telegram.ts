@@ -94,12 +94,18 @@ export function parseTelegramTopicId(topicInput?: string, chatInput?: string): n
   return undefined;
 }
 
+let memorySettingsCache: TelegramSettings | null = null;
+
 export function getTelegramSettings(): TelegramSettings {
+  if (memorySettingsCache) {
+    return memorySettingsCache;
+  }
+
   const saved = localStorage.getItem('turnamen_kd_telegram_settings_v2');
   if (saved) {
     try {
       const parsed = JSON.parse(saved);
-      return {
+      memorySettingsCache = {
         bot1_token: parsed.bot1_token || '',
         bot1_chat_id: parsed.bot1_chat_id || '',
         bot1_topic_id: parsed.bot1_topic_id || '',
@@ -112,6 +118,7 @@ export function getTelegramSettings(): TelegramSettings {
         bot2_topic_id: parsed.bot2_topic_id || '',
         bot2_enabled: !!parsed.bot2_enabled,
       };
+      return memorySettingsCache;
     } catch {
       // ignore
     }
@@ -133,7 +140,7 @@ export function getTelegramSettings(): TelegramSettings {
     }
   }
 
-  return {
+  memorySettingsCache = {
     bot1_token: oldToken,
     bot1_chat_id: oldChatId,
     bot1_topic_id: '',
@@ -146,33 +153,41 @@ export function getTelegramSettings(): TelegramSettings {
     bot2_topic_id: '',
     bot2_enabled: false,
   };
+  return memorySettingsCache;
 }
 
-export function saveTelegramSettings(settings: TelegramSettings) {
+export async function saveTelegramSettings(settings: TelegramSettings) {
+  memorySettingsCache = { ...settings };
   localStorage.setItem('turnamen_kd_telegram_settings_v2', JSON.stringify(settings));
 
   // Async sync to Supabase if client is active
   const supabase = getSupabaseClient();
   if (supabase) {
-    supabase
-      .from('telegram_settings')
-      .upsert({
-        id: 'default',
-        bot1_token: settings.bot1_token,
-        bot1_chat_id: settings.bot1_chat_id,
-        bot1_topic_id: settings.bot1_topic_id || '',
-        bot1_enabled: settings.bot1_enabled,
-        auto_notify_score: settings.auto_notify_score,
-        auto_notify_schedule: settings.auto_notify_schedule,
-        bot2_token: settings.bot2_token,
-        bot2_chat_id: settings.bot2_chat_id,
-        bot2_topic_id: settings.bot2_topic_id || '',
-        bot2_enabled: settings.bot2_enabled,
-        updated_at: new Date().toISOString(),
-      })
-      .then(({ error }) => {
-        if (error) console.warn('Supabase telegram_settings upsert error:', error);
-      });
+    try {
+      const { error } = await supabase
+        .from('telegram_settings')
+        .upsert({
+          id: 'default',
+          bot1_token: settings.bot1_token,
+          bot1_chat_id: settings.bot1_chat_id,
+          bot1_topic_id: settings.bot1_topic_id || '',
+          bot1_enabled: settings.bot1_enabled,
+          auto_notify_score: settings.auto_notify_score,
+          auto_notify_schedule: settings.auto_notify_schedule,
+          bot2_token: settings.bot2_token,
+          bot2_chat_id: settings.bot2_chat_id,
+          bot2_topic_id: settings.bot2_topic_id || '',
+          bot2_enabled: settings.bot2_enabled,
+          updated_at: new Date().toISOString(),
+        });
+      if (error) {
+        console.error('[SUPABASE TELEGRAM SETTINGS ERROR]', error.message, error);
+      } else {
+        console.log('[SUPABASE TELEGRAM SETTINGS SUCCESS] Saved permanently to Supabase.');
+      }
+    } catch (err) {
+      console.error('[SUPABASE TELEGRAM SETTINGS EXCEPTION]', err);
+    }
   }
 }
 
@@ -183,7 +198,17 @@ export async function syncTelegramSettingsFromSupabase() {
   const supabase = getSupabaseClient();
   if (!supabase) return;
   try {
-    const { data } = await supabase.from('telegram_settings').select('*').eq('id', 'default').single();
+    const { data, error } = await supabase
+      .from('telegram_settings')
+      .select('*')
+      .eq('id', 'default')
+      .maybeSingle();
+
+    if (error) {
+      console.warn('[SUPABASE TELEGRAM FETCH WARNING]', error.message);
+      return;
+    }
+
     if (data) {
       const settings: TelegramSettings = {
         bot1_token: data.bot1_token || '',
@@ -198,10 +223,11 @@ export async function syncTelegramSettingsFromSupabase() {
         bot2_topic_id: data.bot2_topic_id || '',
         bot2_enabled: !!data.bot2_enabled,
       };
+      memorySettingsCache = settings;
       localStorage.setItem('turnamen_kd_telegram_settings_v2', JSON.stringify(settings));
     }
-  } catch {
-    // ignore
+  } catch (err) {
+    console.warn('[SUPABASE TELEGRAM FETCH EXCEPTION]', err);
   }
 }
 

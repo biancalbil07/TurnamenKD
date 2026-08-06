@@ -170,7 +170,18 @@ function saveToLocalStorage() {
 // -------------------------------------------------------------
 // SUPABASE SYNC LOGIC
 // -------------------------------------------------------------
-async function syncFromSupabase() {
+let realtimeConnectionState = 'DISCONNECTED';
+
+export function getRealtimeConnectionStatus() {
+  const supabase = getSupabaseClient();
+  if (!supabase) return { connected: false, status: 'NO_SUPABASE' };
+  return {
+    connected: realtimeConnectionState === 'SUBSCRIBED',
+    status: realtimeConnectionState,
+  };
+}
+
+export async function syncFromSupabase() {
   const supabase = getSupabaseClient();
   if (!supabase) return;
 
@@ -190,26 +201,44 @@ async function syncFromSupabase() {
     } else if (pRes.data && pRes.data.length > 0) {
       appData.panitiaMembers = pRes.data;
     } else if (pRes.data && pRes.data.length === 0) {
-      console.log('[SUPABASE SYNC] Tabel panitia_members di Supabase kosong. Menginisialisasi user default (admin/panitia)...');
-      appData.panitiaMembers = DEFAULT_MEMBERS;
-      await supabase.from('panitia_members').upsert(DEFAULT_MEMBERS);
+      if (appData.panitiaMembers.length > 0) {
+        console.log('[SUPABASE SYNC] Tabel panitia_members di Supabase kosong. Syncing local members to Supabase...');
+        await supabase.from('panitia_members').upsert(appData.panitiaMembers);
+      } else {
+        console.log('[SUPABASE SYNC] Tabel panitia_members di Supabase kosong. Menginisialisasi user default (admin/panitia)...');
+        appData.panitiaMembers = DEFAULT_MEMBERS;
+        await supabase.from('panitia_members').upsert(DEFAULT_MEMBERS);
+      }
     }
 
     // Handle Tournaments Sync
-    if (tRes.data && tRes.data.length > 0) {
+    if (tRes.error) {
+      console.error('[SUPABASE SYNC ERROR] tournaments:', tRes.error.message);
+    } else if (tRes.data && tRes.data.length > 0) {
       appData.tournaments = tRes.data;
     } else if (tRes.data && tRes.data.length === 0) {
-      appData.tournaments = [DEFAULT_TOURNAMENT];
-      await supabase.from('tournaments').upsert([DEFAULT_TOURNAMENT]);
+      if (appData.tournaments.length > 0) {
+        await supabase.from('tournaments').upsert(appData.tournaments);
+      } else {
+        appData.tournaments = [DEFAULT_TOURNAMENT];
+        await supabase.from('tournaments').upsert([DEFAULT_TOURNAMENT]);
+      }
     }
 
     // Handle Teams & Matches Sync
-    if (teRes.data && teRes.data.length > 0) appData.teams = teRes.data;
-    if (mRes.data && mRes.data.length > 0) appData.matches = mRes.data;
-    if (aRes.data && aRes.data.length > 0) appData.auditLogs = aRes.data;
+    if (teRes.error) console.error('[SUPABASE SYNC ERROR] teams:', teRes.error.message);
+    else if (teRes.data && teRes.data.length > 0) appData.teams = teRes.data;
+
+    if (mRes.error) console.error('[SUPABASE SYNC ERROR] matches:', mRes.error.message);
+    else if (mRes.data && mRes.data.length > 0) appData.matches = mRes.data;
+
+    if (aRes.error) console.error('[SUPABASE SYNC ERROR] audit_logs:', aRes.error.message);
+    else if (aRes.data && aRes.data.length > 0) appData.auditLogs = aRes.data;
 
     // Handle Time Slots Sync
-    if (tsRes.data && tsRes.data.length > 0) {
+    if (tsRes.error) {
+      console.error('[SUPABASE SYNC ERROR] time_slots:', tsRes.error.message);
+    } else if (tsRes.data && tsRes.data.length > 0) {
       appData.timeSlots = tsRes.data;
     } else if (tsRes.data && tsRes.data.length === 0) {
       appData.timeSlots = DEFAULT_TIME_SLOTS;
@@ -231,12 +260,20 @@ function subscribeSupabaseRealtime() {
   const supabase = getSupabaseClient();
   if (!supabase || realtimeChannelSubscription) return;
 
+  realtimeConnectionState = 'CONNECTING';
+  notifyListeners();
+
   realtimeChannelSubscription = supabase
-    .channel('public:realtime-turnamen')
-    .on('postgres_changes', { event: '*', schema: 'public' }, () => {
+    .channel('public:realtime-turnamen-channel')
+    .on('postgres_changes', { event: '*', schema: 'public' }, (payload) => {
+      console.log('⚡ [SUPABASE REALTIME EVENT]', payload.table, payload.eventType);
       syncFromSupabase();
     })
-    .subscribe();
+    .subscribe((status) => {
+      console.log('⚡ [SUPABASE REALTIME CHANNEL STATUS]', status);
+      realtimeConnectionState = status;
+      notifyListeners();
+    });
 }
 
 /**
@@ -249,9 +286,14 @@ async function autoUpsert(table: string, data: any[]) {
   const supabase = getSupabaseClient();
   if (supabase && data.length > 0) {
     try {
-      await supabase.from(table).upsert(data);
+      const { error } = await supabase.from(table).upsert(data);
+      if (error) {
+        console.error(`[SUPABASE UPSERT ERROR] Table: ${table}:`, error.message, error);
+      } else {
+        console.log(`[SUPABASE UPSERT SUCCESS] ${data.length} item(s) to ${table}`);
+      }
     } catch (err) {
-      console.warn(`Supabase upsert error on ${table}:`, err);
+      console.warn(`[SUPABASE UPSERT EXCEPTION] Table ${table}:`, err);
     }
   }
 }
@@ -263,9 +305,14 @@ async function autoDelete(table: string, filterKey: string, filterVal: string) {
   const supabase = getSupabaseClient();
   if (supabase) {
     try {
-      await supabase.from(table).delete().eq(filterKey, filterVal);
+      const { error } = await supabase.from(table).delete().eq(filterKey, filterVal);
+      if (error) {
+        console.error(`[SUPABASE DELETE ERROR] Table: ${table}:`, error.message, error);
+      } else {
+        console.log(`[SUPABASE DELETE SUCCESS] Table ${table} where ${filterKey}=${filterVal}`);
+      }
     } catch (err) {
-      console.warn(`Supabase delete error on ${table}:`, err);
+      console.warn(`[SUPABASE DELETE EXCEPTION] Table ${table}:`, err);
     }
   }
 }

@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import { X, Database, Send, Code, Save, RefreshCw, CheckCircle, AlertCircle, Copy, Check, ShieldAlert, Image } from 'lucide-react';
 import { getSupabaseConfig, saveSupabaseConfig, testSupabaseConnection, SUPABASE_SQL_SCHEMA } from '../lib/supabase';
 import { getTelegramSettings, saveTelegramSettings, sendTelegramBot1Message, sendTelegramBot2Photo, parseTelegramChatId, parseTelegramTopicId } from '../lib/telegram';
-import { resetTournamentData } from '../lib/db';
+import { resetTournamentData, initDatabase } from '../lib/db';
 import { Role } from '../types';
 
 interface SettingsModalProps {
@@ -56,13 +56,14 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
   // SQL Copy state
   const [copiedSQL, setCopiedSQL] = useState(false);
 
-  const handleSaveSupabase = () => {
+  const handleSaveSupabase = async () => {
     saveSupabaseConfig({
       url: supaUrl.trim(),
       anonKey: supaKey.trim(),
       enabled: supaEnabled,
     });
-    alert('Pengaturan Database Supabase berhasil disimpan!');
+    alert('Pengaturan Database Supabase berhasil disimpan! Memulai sinkronisasi data...');
+    await initDatabase();
     onRefreshData();
   };
 
@@ -74,8 +75,8 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
     setIsTestingSupa(false);
   };
 
-  const handleSaveTelegram = () => {
-    saveTelegramSettings({
+  const handleSaveTelegram = async () => {
+    await saveTelegramSettings({
       bot1_token: bot1Token.trim(),
       bot1_chat_id: bot1ChatId.trim(),
       bot1_topic_id: bot1TopicId.trim(),
@@ -88,7 +89,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
       bot2_topic_id: bot2TopicId.trim(),
       bot2_enabled: bot2Enabled,
     });
-    alert('Pengaturan 2 Bot Telegram berhasil disimpan!');
+    alert('Pengaturan 2 Bot Telegram berhasil disimpan secara permanen di Database Supabase & Local Cache!');
   };
 
   const handleTestBot1 = async () => {

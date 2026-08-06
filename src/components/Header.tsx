@@ -1,8 +1,9 @@
 import React, { useState } from 'react';
-import { Trophy, Shield, Users, RefreshCw, Send, Plus, ChevronDown, Radio, User, LogOut, Settings, Trash2, AlertTriangle } from 'lucide-react';
+import { Trophy, Shield, Users, RefreshCw, Send, Plus, ChevronDown, Radio, User, LogOut, Settings, Trash2, AlertTriangle, Zap } from 'lucide-react';
 import { Tournament, Role, PanitiaMember } from '../types';
 import { getSupabaseConfig } from '../lib/supabase';
 import { getTelegramSettings } from '../lib/telegram';
+import { getRealtimeConnectionStatus } from '../lib/db';
 
 interface HeaderProps {
   tournaments: Tournament[];
@@ -38,6 +39,7 @@ export const Header: React.FC<HeaderProps> = ({
 
   const supabaseConfig = getSupabaseConfig();
   const telegramSettings = getTelegramSettings();
+  const realtimeStatus = getRealtimeConnectionStatus();
 
   const isSupabaseConnected = supabaseConfig.enabled && supabaseConfig.url;
   const isTelegramConfigured = (telegramSettings.bot1_enabled && telegramSettings.bot1_token) || (telegramSettings.bot2_enabled && telegramSettings.bot2_token);
@@ -156,6 +158,20 @@ export const Header: React.FC<HeaderProps> = ({
         {/* Status Indicators & User Profile Dropdown */}
         <div className="flex items-center gap-2.5 flex-wrap text-xs">
           
+          {/* Global Realtime Connection Status Indicator */}
+          <div
+            className={`px-3 py-1.5 rounded-xl border flex items-center gap-1.5 text-[11px] font-bold tracking-wide transition ${
+              realtimeStatus.connected
+                ? 'bg-emerald-950/80 border-emerald-500/50 text-emerald-300 shadow-sm shadow-emerald-500/20'
+                : 'bg-amber-950/80 border-amber-500/50 text-amber-300'
+            }`}
+            title={realtimeStatus.connected ? 'Realtime Websocket Supabase Aktif & Terhubung' : 'Terhubung ke Realtime Lokal'}
+          >
+            <Zap className={`w-3.5 h-3.5 ${realtimeStatus.connected ? 'text-emerald-400 animate-bounce' : 'text-amber-400'}`} />
+            <span className="hidden sm:inline">REALTIME:</span>
+            <span>{realtimeStatus.connected ? 'CONNECTED' : 'LOCAL SYNC'}</span>
+          </div>
+
           {/* Cloud Sync Status (Only for Master) */}
           {isMaster && (
             <div
