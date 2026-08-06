@@ -59,21 +59,21 @@ export const Header: React.FC<HeaderProps> = ({
 
   return (
     <header className="bg-slate-900 text-white shadow-xl sticky top-0 z-40 border-b border-slate-800">
-      {/* Top Banner */}
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-3.5 flex flex-col md:flex-row md:items-center md:justify-between gap-3 border-b border-slate-800">
+      {/* Top Banner - Single Row Horizontal Layout */}
+      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-2.5 flex flex-row items-center justify-between gap-3 border-b border-slate-800 overflow-x-auto no-scrollbar">
         
-        {/* Brand & Active Tournament Selector */}
-        <div className="flex items-center gap-4 flex-wrap">
-          <div className="flex items-center gap-3 bg-slate-950 px-3.5 py-1.5 rounded-xl border border-slate-800 shadow-inner">
-            <div className="w-9 h-9 bg-red-600 text-white rounded-lg flex items-center justify-center font-black text-lg italic shadow-md shadow-red-600/30 shrink-0">
+        {/* Left Side: Brand Logo & Tournament Selector */}
+        <div className="flex items-center gap-3 shrink-0">
+          <div className="flex items-center gap-2.5 bg-slate-950 px-3 py-1.5 rounded-xl border border-slate-800 shadow-inner h-9">
+            <div className="w-6 h-6 bg-red-600 text-white rounded-md flex items-center justify-center font-black text-xs italic shadow-md shadow-red-600/30 shrink-0">
               KD
             </div>
-            <div>
-              <h1 className="font-black text-base sm:text-lg tracking-wider uppercase leading-none text-white flex items-center gap-2">
+            <div className="flex items-center gap-2">
+              <h1 className="font-black text-xs sm:text-sm tracking-wider uppercase leading-none text-white whitespace-nowrap">
                 Turnamen KD
               </h1>
-              <span className="text-[10px] text-red-500 font-bold uppercase tracking-widest bg-red-500/10 px-1.5 py-0.5 rounded">
-                {isMaster ? 'Master Admin System' : 'Panitia Lapangan System'}
+              <span className="text-[9px] text-red-400 font-bold uppercase tracking-widest bg-red-500/10 px-1.5 py-0.5 rounded border border-red-500/20 whitespace-nowrap hidden sm:inline-block">
+                {isMaster ? 'Master Admin' : 'Panitia Lapangan'}
               </span>
             </div>
           </div>
@@ -82,13 +82,13 @@ export const Header: React.FC<HeaderProps> = ({
           <div className="relative">
             <button
               onClick={() => setShowTournDropdown(!showTournDropdown)}
-              className="flex items-center gap-2.5 bg-slate-800 hover:bg-slate-750 px-3.5 py-2 rounded-xl border border-slate-700 text-xs sm:text-sm font-bold transition shadow-sm"
+              className="h-9 flex items-center gap-2 bg-slate-800 hover:bg-slate-750 px-3 rounded-xl border border-slate-700 text-xs font-bold transition shadow-sm whitespace-nowrap"
             >
-              <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse"></span>
-              <span className="max-w-[160px] sm:max-w-[220px] truncate text-slate-100">
+              <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse shrink-0"></span>
+              <span className="max-w-[140px] sm:max-w-[200px] truncate text-slate-100">
                 {activeTournament?.name || 'Pilih Turnamen'}
               </span>
-              <ChevronDown className="w-4 h-4 text-slate-400" />
+              <ChevronDown className="w-3.5 h-3.5 text-slate-400 shrink-0" />
             </button>
 
             {showTournDropdown && (
@@ -155,37 +155,35 @@ export const Header: React.FC<HeaderProps> = ({
           </div>
         </div>
 
-        {/* Status Indicators & User Profile Dropdown */}
-        <div className="flex items-center gap-2.5 flex-wrap text-xs">
+        {/* Right Side: Status Badges & Profile Dropdown */}
+        <div className="flex items-center gap-2 shrink-0 flex-nowrap text-xs">
           
           {/* Global Realtime Connection Status Indicator */}
           <div
-            className={`px-3 py-1.5 rounded-xl border flex items-center gap-1.5 text-[11px] font-bold tracking-wide transition ${
+            className={`h-9 px-3 rounded-xl border flex items-center gap-1.5 text-[11px] font-bold tracking-wide transition whitespace-nowrap shrink-0 ${
               realtimeStatus.connected
                 ? 'bg-emerald-950/80 border-emerald-500/50 text-emerald-300 shadow-sm shadow-emerald-500/20'
-                : 'bg-amber-950/80 border-amber-500/50 text-amber-300'
+                : 'bg-red-950/80 border-red-500/50 text-red-300'
             }`}
-            title={realtimeStatus.connected ? 'Realtime Websocket Supabase Aktif & Terhubung' : 'Terhubung ke Realtime Lokal'}
+            title={realtimeStatus.connected ? 'Realtime Websocket Supabase Live & Terhubung' : 'Terputus dari Supabase Realtime'}
           >
-            <Zap className={`w-3.5 h-3.5 ${realtimeStatus.connected ? 'text-emerald-400 animate-bounce' : 'text-amber-400'}`} />
-            <span className="hidden sm:inline">REALTIME:</span>
-            <span>{realtimeStatus.connected ? 'CONNECTED' : 'LOCAL SYNC'}</span>
+            <Zap className={`w-3.5 h-3.5 shrink-0 ${realtimeStatus.connected ? 'text-emerald-400 animate-pulse' : 'text-red-400'}`} />
+            <span>{realtimeStatus.connected ? '⚡ REALTIME: SUPABASE LIVE' : '🔴 REALTIME: DISCONNECTED'}</span>
           </div>
 
           {/* Cloud Sync Status (Only for Master) */}
           {isMaster && (
             <div
               onClick={onOpenSettings}
-              className={`cursor-pointer px-3 py-1.5 rounded-xl border flex items-center gap-1.5 text-[11px] font-bold tracking-wide transition ${
+              className={`h-9 px-3 rounded-xl border flex items-center gap-1.5 text-[11px] font-bold tracking-wide transition whitespace-nowrap shrink-0 cursor-pointer ${
                 isSupabaseConnected
                   ? 'bg-emerald-950/60 border-emerald-500/40 text-emerald-300 hover:bg-emerald-900/60'
                   : 'bg-amber-950/60 border-amber-500/40 text-amber-300 hover:bg-amber-900/60'
               }`}
               title="Klik untuk konfigurasi database Supabase"
             >
-              <Radio className="w-3.5 h-3.5 animate-pulse" />
-              <span className="hidden sm:inline">DATABASE:</span>
-              <span>{isSupabaseConnected ? 'SUPABASE LIVE' : 'LOCAL REALTIME'}</span>
+              <Radio className="w-3.5 h-3.5 animate-pulse text-emerald-400 shrink-0" />
+              <span>{isSupabaseConnected ? 'DATABASE: SUPABASE LIVE' : 'DATABASE: LOCAL ONLY'}</span>
             </div>
           )}
 
@@ -193,31 +191,30 @@ export const Header: React.FC<HeaderProps> = ({
           {isMaster && (
             <div
               onClick={onOpenSettings}
-              className={`cursor-pointer px-3 py-1.5 rounded-xl border flex items-center gap-1.5 text-[11px] font-bold tracking-wide transition ${
+              className={`h-9 px-3 rounded-xl border flex items-center gap-1.5 text-[11px] font-bold tracking-wide transition whitespace-nowrap shrink-0 cursor-pointer ${
                 isTelegramConfigured
                   ? 'bg-blue-950/60 border-blue-500/40 text-blue-300 hover:bg-blue-900/60'
-                  : 'bg-slate-800 border-slate-700 text-slate-300 hover:bg-slate-750'
+                  : 'bg-slate-800 border-slate-700 text-slate-400 hover:bg-slate-750'
               }`}
               title="Klik untuk atur Bot Telegram"
             >
-              <Send className="w-3.5 h-3.5 text-blue-400" />
-              <span className="hidden sm:inline">BOT:</span>
-              <span>{isTelegramConfigured ? 'ON' : 'OFF'}</span>
+              <Send className="w-3.5 h-3.5 text-blue-400 shrink-0" />
+              <span>{isTelegramConfigured ? 'BOT: ON' : 'BOT: OFF'}</span>
             </div>
           )}
 
           {/* Active Logged-In Profile Dropdown */}
-          <div className="relative">
+          <div className="relative shrink-0">
             <button
               onClick={() => setShowRoleDropdown(!showRoleDropdown)}
-              className="flex items-center gap-2 bg-slate-800 hover:bg-slate-750 px-3 py-1.5 rounded-xl border border-slate-700 font-bold text-white text-xs transition shadow-sm"
+              className="h-9 flex items-center gap-2 bg-slate-800 hover:bg-slate-750 px-3 rounded-xl border border-slate-700 font-bold text-white text-xs transition shadow-sm whitespace-nowrap"
             >
-              <Shield className="w-3.5 h-3.5 text-red-500" />
-              <span>{currentUser.name}</span>
-              <span className="bg-red-600/20 text-red-400 px-1.5 py-0.5 rounded text-[10px] uppercase font-black tracking-wider border border-red-500/30">
+              <Shield className="w-3.5 h-3.5 text-red-500 shrink-0" />
+              <span className="max-w-[120px] truncate">{currentUser.name}</span>
+              <span className="bg-red-600/20 text-red-400 px-1.5 py-0.5 rounded text-[10px] uppercase font-black tracking-wider border border-red-500/30 shrink-0">
                 {currentUser.role === 'master' ? 'Master' : 'Lapangan'}
               </span>
-              <ChevronDown className="w-3 h-3 text-slate-400" />
+              <ChevronDown className="w-3 h-3 text-slate-400 shrink-0" />
             </button>
 
             {showRoleDropdown && (
@@ -269,7 +266,7 @@ export const Header: React.FC<HeaderProps> = ({
           {isMaster && (
             <button
               onClick={onOpenSettings}
-              className="p-2 bg-slate-800 hover:bg-slate-750 border border-slate-700 rounded-xl text-slate-300 hover:text-white transition shadow-sm"
+              className="h-9 w-9 flex items-center justify-center bg-slate-800 hover:bg-slate-750 border border-slate-700 rounded-xl text-slate-300 hover:text-white transition shadow-sm shrink-0"
               title="Pengaturan Database & Bot Telegram"
             >
               <Settings className="w-4 h-4" />
