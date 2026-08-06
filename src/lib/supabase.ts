@@ -177,7 +177,7 @@ ALTER PUBLICATION supabase_realtime ADD TABLE public.audit_logs;
 ALTER PUBLICATION supabase_realtime ADD TABLE public.time_slots;
 ALTER PUBLICATION supabase_realtime ADD TABLE public.telegram_settings;
 
--- Disable Row Level Security (RLS) or enable public access for easy panitia management
+-- Disable Row Level Security (RLS) and grant permissions for easy panitia & cross-browser management
 ALTER TABLE public.tournaments DISABLE ROW LEVEL SECURITY;
 ALTER TABLE public.teams DISABLE ROW LEVEL SECURITY;
 ALTER TABLE public.matches DISABLE ROW LEVEL SECURITY;
@@ -185,4 +185,23 @@ ALTER TABLE public.panitia_members DISABLE ROW LEVEL SECURITY;
 ALTER TABLE public.audit_logs DISABLE ROW LEVEL SECURITY;
 ALTER TABLE public.time_slots DISABLE ROW LEVEL SECURITY;
 ALTER TABLE public.telegram_settings DISABLE ROW LEVEL SECURITY;
+
+GRANT ALL ON ALL TABLES IN SCHEMA public TO anon, authenticated, postgres, service_role;
+
+-- 8. Default Seed Data
+INSERT INTO public.panitia_members (id, name, username, password, role, phone, division, status)
+VALUES 
+  ('panitia_master', 'Mas Ageng (Master Admin)', 'admin', '123', 'master', '081234567890', 'Koordinator Utama', 'active'),
+  ('panitia_field', 'Mas Rian (Panitia Lapangan)', 'panitia', '123', 'anggota', '089876543210', 'Seksi Lapangan & Skor', 'active')
+ON CONFLICT (id) DO NOTHING;
+
+INSERT INTO public.time_slots (id, slot_label, is_default)
+VALUES 
+  ('slot_1', '09:00 - 15:00', true),
+  ('slot_2', '16:00 - 22:00', true)
+ON CONFLICT (id) DO NOTHING;
+
+INSERT INTO public.telegram_settings (id, bot1_enabled, bot2_enabled, auto_notify_score, auto_notify_schedule)
+VALUES ('default', false, false, true, true)
+ON CONFLICT (id) DO NOTHING;
 `;

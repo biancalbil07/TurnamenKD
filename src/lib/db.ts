@@ -174,26 +174,55 @@ async function syncFromSupabase() {
   const supabase = getSupabaseClient();
   if (!supabase) return;
 
-  const [tRes, teRes, mRes, pRes, aRes, tsRes] = await Promise.all([
-    supabase.from('tournaments').select('*'),
-    supabase.from('teams').select('*'),
-    supabase.from('matches').select('*'),
-    supabase.from('panitia_members').select('*'),
-    supabase.from('audit_logs').select('*').order('timestamp', { ascending: false }).limit(50),
-    supabase.from('time_slots').select('*').order('created_at', { ascending: true }),
-  ]);
+  try {
+    const [tRes, teRes, mRes, pRes, aRes, tsRes] = await Promise.all([
+      supabase.from('tournaments').select('*'),
+      supabase.from('teams').select('*'),
+      supabase.from('matches').select('*'),
+      supabase.from('panitia_members').select('*'),
+      supabase.from('audit_logs').select('*').order('timestamp', { ascending: false }).limit(50),
+      supabase.from('time_slots').select('*').order('created_at', { ascending: true }),
+    ]);
 
-  if (tRes.data && tRes.data.length > 0) appData.tournaments = tRes.data;
-  if (teRes.data && teRes.data.length > 0) appData.teams = teRes.data;
-  if (mRes.data && mRes.data.length > 0) appData.matches = mRes.data;
-  if (pRes.data && pRes.data.length > 0) appData.panitiaMembers = pRes.data;
-  if (aRes.data && aRes.data.length > 0) appData.auditLogs = aRes.data;
-  if (tsRes.data && tsRes.data.length > 0) appData.timeSlots = tsRes.data;
+    // Handle Panitia Members Sync
+    if (pRes.error) {
+      console.error('[SUPABASE SYNC ERROR] panitia_members:', pRes.error.message, pRes.error);
+    } else if (pRes.data && pRes.data.length > 0) {
+      appData.panitiaMembers = pRes.data;
+    } else if (pRes.data && pRes.data.length === 0) {
+      console.log('[SUPABASE SYNC] Tabel panitia_members di Supabase kosong. Menginisialisasi user default (admin/panitia)...');
+      appData.panitiaMembers = DEFAULT_MEMBERS;
+      await supabase.from('panitia_members').upsert(DEFAULT_MEMBERS);
+    }
 
-  await syncTelegramSettingsFromSupabase();
+    // Handle Tournaments Sync
+    if (tRes.data && tRes.data.length > 0) {
+      appData.tournaments = tRes.data;
+    } else if (tRes.data && tRes.data.length === 0) {
+      appData.tournaments = [DEFAULT_TOURNAMENT];
+      await supabase.from('tournaments').upsert([DEFAULT_TOURNAMENT]);
+    }
 
-  saveToLocalStorage();
-  notifyListeners();
+    // Handle Teams & Matches Sync
+    if (teRes.data && teRes.data.length > 0) appData.teams = teRes.data;
+    if (mRes.data && mRes.data.length > 0) appData.matches = mRes.data;
+    if (aRes.data && aRes.data.length > 0) appData.auditLogs = aRes.data;
+
+    // Handle Time Slots Sync
+    if (tsRes.data && tsRes.data.length > 0) {
+      appData.timeSlots = tsRes.data;
+    } else if (tsRes.data && tsRes.data.length === 0) {
+      appData.timeSlots = DEFAULT_TIME_SLOTS;
+      await supabase.from('time_slots').upsert(DEFAULT_TIME_SLOTS);
+    }
+
+    await syncTelegramSettingsFromSupabase();
+
+    saveToLocalStorage();
+    notifyListeners();
+  } catch (err) {
+    console.error('[SUPABASE SYNC EXCEPTION]', err);
+  }
 }
 
 let realtimeChannelSubscription: any = null;
@@ -355,6 +384,30 @@ export async function addPanitiaMember(member: PanitiaMember, currentUser: { nam
   appData.panitiaMembers.push(member);
   logAudit(currentUser.name, currentUser.role, 'ADD_PANITIA', `Menambah panitia baru: ${member.name} (@${member.username}) - Peran: ${member.role}`);
   await autoUpsert('panitia_members', [member]);
+
+  // Attempt Supabase Auth account creation
+  const supabase = getSupabaseClient();
+  if (supabase) {
+    try {
+      const email = `${member.username.toLowerCase()}@turnamenkd.com`;
+      const { error } = await supabase.auth.signUp({
+        email,
+        password: member.password || '123',
+        options: {
+          data: {
+            name: member.name,
+            role: member.role,
+            username: member.username,
+          },
+        },
+      });
+      if (error && !error.message.includes('User already registered')) {
+        console.warn('[SUPABASE AUTH SIGNUP WARNING]', error.message);
+      }
+    } catch (err) {
+      console.warn('[SUPABASE AUTH SIGNUP EXCEPTION]', err);
+    }
+  }
 }
 
 export async function updatePanitiaMember(member: PanitiaMember, currentUser: { name: string; role: string }) {

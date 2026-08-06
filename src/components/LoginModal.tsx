@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
-import { KeyRound, User, Lock, AlertCircle } from 'lucide-react';
+import { KeyRound, User, Lock, AlertCircle, Loader2 } from 'lucide-react';
 import { PanitiaMember } from '../types';
+import { getSupabaseClient } from '../lib/supabase';
 
 interface LoginModalProps {
   panitiaMembers: PanitiaMember[];
@@ -11,28 +12,68 @@ export const LoginModal: React.FC<LoginModalProps> = ({ panitiaMembers, onLoginS
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
   const [errorMsg, setErrorMsg] = useState('');
+  const [isLoading, setIsLoading] = useState(false);
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setErrorMsg('');
+    setIsLoading(true);
 
     const trimmedUsername = username.trim().toLowerCase();
-    const foundUser = panitiaMembers.find(
-      (m) => m.username.toLowerCase() === trimmedUsername && m.status === 'active'
+    
+    // 1. Search in memory state first
+    let foundUser = panitiaMembers.find(
+      (m) => m.username.toLowerCase() === trimmedUsername
     );
 
+    // 2. If not found in local memory state or to verify fresh data, query Supabase directly
+    const supabase = getSupabaseClient();
+    if (supabase) {
+      try {
+        const { data, error } = await supabase
+          .from('panitia_members')
+          .select('*')
+          .ilike('username', trimmedUsername)
+          .maybeSingle();
+
+        if (error) {
+          console.error('[AUTH ERROR] Supabase query failed when checking panitia_members:', error.message, error);
+        } else if (data) {
+          foundUser = data;
+        }
+      } catch (err) {
+        console.error('[AUTH EXCEPTION] Error connecting to Supabase during login:', err);
+      }
+    }
+
+    // 3. User not found check
     if (!foundUser) {
-      setErrorMsg('Username tidak ditemukan atau status akun tidak aktif.');
+      console.error(`[AUTH FAILED] Username "@${trimmedUsername}" tidak ditemukan di database.`);
+      setErrorMsg(`Username "@${trimmedUsername}" tidak ditemukan. Silakan hubungi Master Admin.`);
+      setIsLoading(false);
       return;
     }
 
-    // Verify password (default '123' if not set)
+    // 4. Inactive account check
+    if (foundUser.status === 'inactive') {
+      console.error(`[AUTH REJECTED] Akun "@${trimmedUsername}" ditemukan tapi berstatus NON-AKTIF.`);
+      setErrorMsg(`Akun @${foundUser.username} sedang non-aktif. Silakan hubungi Master Admin.`);
+      setIsLoading(false);
+      return;
+    }
+
+    // 5. Password check
     const expectedPass = foundUser.password || '123';
     if (password !== expectedPass) {
-      setErrorMsg('Password salah! Silakan periksa kembali password Anda.');
+      console.error(`[AUTH REJECTED] Password salah untuk username "@${trimmedUsername}".`);
+      setErrorMsg('Password yang Anda masukkan salah! Silakan periksa kembali.');
+      setIsLoading(false);
       return;
     }
 
+    // 6. Login Success
+    console.log(`[AUTH SUCCESS] User "${foundUser.name}" (@${foundUser.username}) - Role: ${foundUser.role} berhasil login.`);
+    setIsLoading(false);
     onLoginSuccess(foundUser);
   };
 
@@ -75,7 +116,8 @@ export const LoginModal: React.FC<LoginModalProps> = ({ panitiaMembers, onLoginS
               placeholder="Masukkan username Anda"
               value={username}
               onChange={(e) => setUsername(e.target.value)}
-              className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-300 rounded-xl font-medium text-slate-800 focus:outline-none focus:ring-2 focus:ring-red-500 text-sm"
+              disabled={isLoading}
+              className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-300 rounded-xl font-medium text-slate-800 focus:outline-none focus:ring-2 focus:ring-red-500 text-sm disabled:opacity-50"
               required
             />
           </div>
@@ -89,7 +131,8 @@ export const LoginModal: React.FC<LoginModalProps> = ({ panitiaMembers, onLoginS
               placeholder="Masukkan password"
               value={password}
               onChange={(e) => setPassword(e.target.value)}
-              className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-300 rounded-xl font-medium text-slate-800 focus:outline-none focus:ring-2 focus:ring-red-500 text-sm"
+              disabled={isLoading}
+              className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-300 rounded-xl font-medium text-slate-800 focus:outline-none focus:ring-2 focus:ring-red-500 text-sm disabled:opacity-50"
               required
             />
           </div>
@@ -97,9 +140,20 @@ export const LoginModal: React.FC<LoginModalProps> = ({ panitiaMembers, onLoginS
           <div className="pt-2">
             <button
               type="submit"
-              className="w-full py-3 bg-red-600 hover:bg-red-700 text-white font-black rounded-xl text-sm shadow-lg shadow-red-600/25 hover:shadow-red-600/40 transition-all flex items-center justify-center gap-2"
+              disabled={isLoading}
+              className="w-full py-3 bg-red-600 hover:bg-red-700 text-white font-black rounded-xl text-sm shadow-lg shadow-red-600/25 hover:shadow-red-600/40 transition-all flex items-center justify-center gap-2 disabled:opacity-60"
             >
-              <KeyRound className="w-4 h-4" /> Masuk ke Aplikasi
+              {isLoading ? (
+                <>
+                  <Loader2 className="w-4 h-4 animate-spin" />
+                  <span>Memeriksa Akses...</span>
+                </>
+              ) : (
+                <>
+                  <KeyRound className="w-4 h-4" />
+                  <span>Masuk ke Aplikasi</span>
+                </>
+              )}
             </button>
           </div>
 
