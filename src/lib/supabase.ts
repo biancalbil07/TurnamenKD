@@ -148,12 +148,30 @@ CREATE TABLE IF NOT EXISTS public.time_slots (
   created_at TIMESTAMPTZ DEFAULT NOW()
 );
 
+-- 7. Telegram Settings Table (Supports Group Topics / Threads)
+CREATE TABLE IF NOT EXISTS public.telegram_settings (
+  id TEXT PRIMARY KEY DEFAULT 'default',
+  bot1_token TEXT,
+  bot1_chat_id TEXT,
+  bot1_topic_id TEXT,
+  bot1_enabled BOOLEAN DEFAULT false,
+  auto_notify_score BOOLEAN DEFAULT true,
+  auto_notify_schedule BOOLEAN DEFAULT true,
+  bot2_token TEXT,
+  bot2_chat_id TEXT,
+  bot2_topic_id TEXT,
+  bot2_enabled BOOLEAN DEFAULT false,
+  updated_at TIMESTAMPTZ DEFAULT NOW()
+);
+
 -- Enable Realtime for all tables
 ALTER PUBLICATION supabase_realtime ADD TABLE public.tournaments;
 ALTER PUBLICATION supabase_realtime ADD TABLE public.teams;
 ALTER PUBLICATION supabase_realtime ADD TABLE public.matches;
 ALTER PUBLICATION supabase_realtime ADD TABLE public.panitia_members;
 ALTER PUBLICATION supabase_realtime ADD TABLE public.audit_logs;
+ALTER PUBLICATION supabase_realtime ADD TABLE public.time_slots;
+ALTER PUBLICATION supabase_realtime ADD TABLE public.telegram_settings;
 
 -- Disable Row Level Security (RLS) or enable public access for easy panitia management
 ALTER TABLE public.tournaments DISABLE ROW LEVEL SECURITY;
@@ -161,4 +179,6 @@ ALTER TABLE public.teams DISABLE ROW LEVEL SECURITY;
 ALTER TABLE public.matches DISABLE ROW LEVEL SECURITY;
 ALTER TABLE public.panitia_members DISABLE ROW LEVEL SECURITY;
 ALTER TABLE public.audit_logs DISABLE ROW LEVEL SECURITY;
+ALTER TABLE public.time_slots DISABLE ROW LEVEL SECURITY;
+ALTER TABLE public.telegram_settings DISABLE ROW LEVEL SECURITY;
 `;

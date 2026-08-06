@@ -1,6 +1,7 @@
 import { AuditLog, Match, PanitiaMember, Team, TimeSlot, Tournament } from '../types';
 import { generateKnockoutMatches } from './bracketEngine';
 import { getSupabaseClient } from './supabase';
+import { syncTelegramSettingsFromSupabase } from './telegram';
 
 // BroadcastChannel for instant cross-tab real-time sync
 const broadcastChannel = typeof window !== 'undefined' && 'BroadcastChannel' in window
@@ -188,6 +189,8 @@ async function syncFromSupabase() {
   if (pRes.data && pRes.data.length > 0) appData.panitiaMembers = pRes.data;
   if (aRes.data && aRes.data.length > 0) appData.auditLogs = aRes.data;
   if (tsRes.data && tsRes.data.length > 0) appData.timeSlots = tsRes.data;
+
+  await syncTelegramSettingsFromSupabase();
 
   saveToLocalStorage();
   notifyListeners();

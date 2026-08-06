@@ -76,6 +76,7 @@ export interface TelegramSettings {
   // Bot 1: Report Hasil Pertandingan (Text)
   bot1_token: string;
   bot1_chat_id: string;
+  bot1_topic_id?: string;
   bot1_enabled: boolean;
   auto_notify_score: boolean;
   auto_notify_schedule: boolean;
@@ -83,6 +84,7 @@ export interface TelegramSettings {
   // Bot 2: Report Update Bagan (Image/PNG)
   bot2_token: string;
   bot2_chat_id: string;
+  bot2_topic_id?: string;
   bot2_enabled: boolean;
 }
 

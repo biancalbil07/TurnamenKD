@@ -1,10 +1,54 @@
 import { TelegramSettings, Match, Tournament } from '../types';
+import { getSupabaseClient } from './supabase';
+
+/**
+ * Extracts numeric message_thread_id (Topic ID) from string input or Telegram link.
+ * Example inputs:
+ * - "123" -> 123
+ * - "https://t.me/c/1234567890/123" -> 123
+ * - "https://t.me/groupname/999" -> 999
+ */
+export function parseTelegramTopicId(input?: string): number | undefined {
+  if (!input) return undefined;
+  const trimmed = input.trim();
+  if (!trimmed) return undefined;
+
+  // Check if input is a Telegram URL or contains slashes
+  if (trimmed.includes('/') || trimmed.includes('t.me')) {
+    const clean = trimmed.split('?')[0].split('#')[0];
+    const parts = clean.split('/').filter(Boolean);
+    const lastPart = parts[parts.length - 1];
+    if (lastPart && /^\d+$/.test(lastPart)) {
+      return parseInt(lastPart, 10);
+    }
+  }
+
+  // If input is a direct integer string
+  if (/^\d+$/.test(trimmed)) {
+    return parseInt(trimmed, 10);
+  }
+
+  return undefined;
+}
 
 export function getTelegramSettings(): TelegramSettings {
   const saved = localStorage.getItem('turnamen_kd_telegram_settings_v2');
   if (saved) {
     try {
-      return JSON.parse(saved);
+      const parsed = JSON.parse(saved);
+      return {
+        bot1_token: parsed.bot1_token || '',
+        bot1_chat_id: parsed.bot1_chat_id || '',
+        bot1_topic_id: parsed.bot1_topic_id || '',
+        bot1_enabled: !!parsed.bot1_enabled,
+        auto_notify_score: parsed.auto_notify_score ?? true,
+        auto_notify_schedule: parsed.auto_notify_schedule ?? true,
+
+        bot2_token: parsed.bot2_token || '',
+        bot2_chat_id: parsed.bot2_chat_id || '',
+        bot2_topic_id: parsed.bot2_topic_id || '',
+        bot2_enabled: !!parsed.bot2_enabled,
+      };
     } catch {
       // ignore
     }
@@ -29,18 +73,73 @@ export function getTelegramSettings(): TelegramSettings {
   return {
     bot1_token: oldToken,
     bot1_chat_id: oldChatId,
+    bot1_topic_id: '',
     bot1_enabled: oldEnabled,
     auto_notify_score: true,
     auto_notify_schedule: true,
 
     bot2_token: '',
     bot2_chat_id: '',
+    bot2_topic_id: '',
     bot2_enabled: false,
   };
 }
 
 export function saveTelegramSettings(settings: TelegramSettings) {
   localStorage.setItem('turnamen_kd_telegram_settings_v2', JSON.stringify(settings));
+
+  // Async sync to Supabase if client is active
+  const supabase = getSupabaseClient();
+  if (supabase) {
+    supabase
+      .from('telegram_settings')
+      .upsert({
+        id: 'default',
+        bot1_token: settings.bot1_token,
+        bot1_chat_id: settings.bot1_chat_id,
+        bot1_topic_id: settings.bot1_topic_id || '',
+        bot1_enabled: settings.bot1_enabled,
+        auto_notify_score: settings.auto_notify_score,
+        auto_notify_schedule: settings.auto_notify_schedule,
+        bot2_token: settings.bot2_token,
+        bot2_chat_id: settings.bot2_chat_id,
+        bot2_topic_id: settings.bot2_topic_id || '',
+        bot2_enabled: settings.bot2_enabled,
+        updated_at: new Date().toISOString(),
+      })
+      .then(({ error }) => {
+        if (error) console.warn('Supabase telegram_settings upsert error:', error);
+      });
+  }
+}
+
+/**
+ * Sync telegram settings from Supabase if available
+ */
+export async function syncTelegramSettingsFromSupabase() {
+  const supabase = getSupabaseClient();
+  if (!supabase) return;
+  try {
+    const { data } = await supabase.from('telegram_settings').select('*').eq('id', 'default').single();
+    if (data) {
+      const settings: TelegramSettings = {
+        bot1_token: data.bot1_token || '',
+        bot1_chat_id: data.bot1_chat_id || '',
+        bot1_topic_id: data.bot1_topic_id || '',
+        bot1_enabled: !!data.bot1_enabled,
+        auto_notify_score: data.auto_notify_score ?? true,
+        auto_notify_schedule: data.auto_notify_schedule ?? true,
+
+        bot2_token: data.bot2_token || '',
+        bot2_chat_id: data.bot2_chat_id || '',
+        bot2_topic_id: data.bot2_topic_id || '',
+        bot2_enabled: !!data.bot2_enabled,
+      };
+      localStorage.setItem('turnamen_kd_telegram_settings_v2', JSON.stringify(settings));
+    }
+  } catch {
+    // ignore
+  }
 }
 
 /**
@@ -54,19 +153,31 @@ export async function sendTelegramBot1Message(text: string): Promise<{ success: 
 
   try {
     const url = `https://api.telegram.org/bot${settings.bot1_token}/sendMessage`;
+    const payload: Record<string, any> = {
+      chat_id: settings.bot1_chat_id,
+      text: text,
+      parse_mode: 'Markdown',
+    };
+
+    const threadId = parseTelegramTopicId(settings.bot1_topic_id);
+    if (threadId !== undefined) {
+      payload.message_thread_id = threadId;
+    }
+
     const res = await fetch(url, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        chat_id: settings.bot1_chat_id,
-        text: text,
-        parse_mode: 'Markdown',
-      }),
+      body: JSON.stringify(payload),
     });
 
     const data = await res.json();
     if (data.ok) {
-      return { success: true, message: 'Notifikasi Bot 1 (Hasil Pertandingan) berhasil dikirim!' };
+      return {
+        success: true,
+        message: threadId !== undefined
+          ? `Notifikasi Bot 1 berhasil dikirim ke Topic Chat (#${threadId})!`
+          : 'Notifikasi Bot 1 (Hasil Pertandingan) berhasil dikirim!',
+      };
     } else {
       return { success: false, message: `Bot 1 Gagal: ${data.description || 'Unknown error'}` };
     }
@@ -92,6 +203,11 @@ export async function sendTelegramBot2Photo(imageBlob: Blob, caption: string): P
     formData.append('photo', imageBlob, 'bagan_turnamen.png');
     formData.append('caption', caption);
 
+    const threadId = parseTelegramTopicId(settings.bot2_topic_id);
+    if (threadId !== undefined) {
+      formData.append('message_thread_id', String(threadId));
+    }
+
     const res = await fetch(url, {
       method: 'POST',
       body: formData,
@@ -99,7 +215,12 @@ export async function sendTelegramBot2Photo(imageBlob: Blob, caption: string): P
 
     const data = await res.json();
     if (data.ok) {
-      return { success: true, message: 'Gambar bagan terbaru berhasil dikirim ke Telegram Bot 2!' };
+      return {
+        success: true,
+        message: threadId !== undefined
+          ? `Gambar bagan berhasil dikirim ke Topic Chat Bot 2 (#${threadId})!`
+          : 'Gambar bagan terbaru berhasil dikirim ke Telegram Bot 2!',
+      };
     } else {
       return { success: false, message: `Bot 2 Gagal kirim gambar: ${data.description || 'Unknown error'}` };
     }

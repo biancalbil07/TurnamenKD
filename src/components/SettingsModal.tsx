@@ -32,6 +32,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
   // Bot 1
   const [bot1Token, setBot1Token] = useState(currentTele.bot1_token);
   const [bot1ChatId, setBot1ChatId] = useState(currentTele.bot1_chat_id);
+  const [bot1TopicId, setBot1TopicId] = useState(currentTele.bot1_topic_id || '');
   const [bot1Enabled, setBot1Enabled] = useState(currentTele.bot1_enabled);
   const [teleScoreNotif, setTeleScoreNotif] = useState(currentTele.auto_notify_score);
   const [teleSchedNotif, setTeleSchedNotif] = useState(currentTele.auto_notify_schedule);
@@ -41,6 +42,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
   // Bot 2
   const [bot2Token, setBot2Token] = useState(currentTele.bot2_token);
   const [bot2ChatId, setBot2ChatId] = useState(currentTele.bot2_chat_id);
+  const [bot2TopicId, setBot2TopicId] = useState(currentTele.bot2_topic_id || '');
   const [bot2Enabled, setBot2Enabled] = useState(currentTele.bot2_enabled);
   const [bot2TestMsg, setBot2TestMsg] = useState<{ success: boolean; message: string } | null>(null);
   const [isTestingBot2, setIsTestingBot2] = useState(false);
@@ -70,12 +72,14 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
     saveTelegramSettings({
       bot1_token: bot1Token.trim(),
       bot1_chat_id: bot1ChatId.trim(),
+      bot1_topic_id: bot1TopicId.trim(),
       bot1_enabled: bot1Enabled,
       auto_notify_score: teleScoreNotif,
       auto_notify_schedule: teleSchedNotif,
 
       bot2_token: bot2Token.trim(),
       bot2_chat_id: bot2ChatId.trim(),
+      bot2_topic_id: bot2TopicId.trim(),
       bot2_enabled: bot2Enabled,
     });
     alert('Pengaturan 2 Bot Telegram berhasil disimpan!');
@@ -87,12 +91,14 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
     saveTelegramSettings({
       bot1_token: bot1Token.trim(),
       bot1_chat_id: bot1ChatId.trim(),
+      bot1_topic_id: bot1TopicId.trim(),
       bot1_enabled: true,
       auto_notify_score: teleScoreNotif,
       auto_notify_schedule: teleSchedNotif,
 
       bot2_token: bot2Token.trim(),
       bot2_chat_id: bot2ChatId.trim(),
+      bot2_topic_id: bot2TopicId.trim(),
       bot2_enabled: bot2Enabled,
     });
     const res = await sendTelegramBot1Message('🤖 *TEST BOT 1 (HASIL PERTANDINGAN)*\nSistem Turnamen KD berhasil terhubung dengan Bot 1!');
@@ -106,12 +112,14 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
     saveTelegramSettings({
       bot1_token: bot1Token.trim(),
       bot1_chat_id: bot1ChatId.trim(),
+      bot1_topic_id: bot1TopicId.trim(),
       bot1_enabled: bot1Enabled,
       auto_notify_score: teleScoreNotif,
       auto_notify_schedule: teleSchedNotif,
 
       bot2_token: bot2Token.trim(),
       bot2_chat_id: bot2ChatId.trim(),
+      bot2_topic_id: bot2TopicId.trim(),
       bot2_enabled: true,
     });
 
@@ -329,6 +337,22 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                   </div>
                 </div>
 
+                <div>
+                  <label className="block font-semibold text-slate-700 mb-1">
+                    Bot 1 Topic ID / Link Topic Chat <span className="text-[10px] text-slate-400 font-normal">(Opsional - Forum Supergroup)</span>
+                  </label>
+                  <input
+                    type="text"
+                    placeholder="123 atau https://t.me/c/1234567890/123"
+                    value={bot1TopicId}
+                    onChange={(e) => setBot1TopicId(e.target.value)}
+                    className="w-full px-3 py-2 bg-white border border-slate-300 rounded-xl font-mono text-slate-800"
+                  />
+                  <p className="text-[10px] text-blue-900 mt-1 italic font-medium">
+                    * Masukkan Topic ID (misal: 123) atau tempelkan (paste) langsung Link Topic Chat Telegram Anda (misal: https://t.me/c/1234567890/123).
+                  </p>
+                </div>
+
                 <div className="flex items-center gap-4 text-[11px] pt-1">
                   <label className="flex items-center gap-1.5 font-semibold text-slate-700 cursor-pointer">
                     <input
@@ -412,6 +436,22 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                       className="w-full px-3 py-2 bg-white border border-slate-300 rounded-xl font-mono text-slate-800"
                     />
                   </div>
+                </div>
+
+                <div>
+                  <label className="block font-semibold text-slate-700 mb-1">
+                    Bot 2 Topic ID / Link Topic Chat <span className="text-[10px] text-slate-400 font-normal">(Opsional - Forum Supergroup)</span>
+                  </label>
+                  <input
+                    type="text"
+                    placeholder="123 atau https://t.me/c/1234567890/123"
+                    value={bot2TopicId}
+                    onChange={(e) => setBot2TopicId(e.target.value)}
+                    className="w-full px-3 py-2 bg-white border border-slate-300 rounded-xl font-mono text-slate-800"
+                  />
+                  <p className="text-[10px] text-purple-900 mt-1 italic font-medium">
+                    * Masukkan Topic ID (misal: 123) atau tempelkan (paste) langsung Link Topic Chat Telegram Anda (misal: https://t.me/c/1234567890/123).
+                  </p>
                 </div>
 
                 {bot2TestMsg && (
