@@ -168,14 +168,23 @@ CREATE TABLE IF NOT EXISTS public.telegram_settings (
 ALTER TABLE public.telegram_settings ADD COLUMN IF NOT EXISTS bot1_topic_id TEXT;
 ALTER TABLE public.telegram_settings ADD COLUMN IF NOT EXISTS bot2_topic_id TEXT;
 
--- Enable Realtime for all tables
-ALTER PUBLICATION supabase_realtime ADD TABLE public.tournaments;
-ALTER PUBLICATION supabase_realtime ADD TABLE public.teams;
-ALTER PUBLICATION supabase_realtime ADD TABLE public.matches;
-ALTER PUBLICATION supabase_realtime ADD TABLE public.panitia_members;
-ALTER PUBLICATION supabase_realtime ADD TABLE public.audit_logs;
-ALTER PUBLICATION supabase_realtime ADD TABLE public.time_slots;
-ALTER PUBLICATION supabase_realtime ADD TABLE public.telegram_settings;
+-- Enable Realtime safely & idempotently (No duplicate relation error!)
+DO $$ 
+DECLARE 
+  tbl TEXT;
+  tbls TEXT[] := ARRAY['tournaments', 'teams', 'matches', 'panitia_members', 'audit_logs', 'time_slots', 'telegram_settings'];
+BEGIN
+  FOREACH tbl IN ARRAY tbls LOOP
+    IF NOT EXISTS (
+      SELECT 1 FROM pg_publication_rel pr
+      JOIN pg_class c ON pr.prrelid = c.oid
+      JOIN pg_publication p ON pr.prpubid = p.oid
+      WHERE p.pubname = 'supabase_realtime' AND c.relname = tbl
+    ) THEN
+      EXECUTE format('ALTER PUBLICATION supabase_realtime ADD TABLE public.%I', tbl);
+    END IF;
+  END LOOP;
+END $$;
 
 -- Disable Row Level Security (RLS) and grant permissions for easy panitia & cross-browser management
 ALTER TABLE public.tournaments DISABLE ROW LEVEL SECURITY;
