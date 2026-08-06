@@ -1,47 +1,68 @@
 import { createClient, SupabaseClient } from '@supabase/supabase-js';
 import { SupabaseConfig } from '../types';
+import { PATEN_SUPABASE_URL, PATEN_SUPABASE_ANON_KEY, supabase as patenClient } from './supabaseClient';
 
-// Default environment credentials or empty
-const DEFAULT_SUPABASE_URL = (import.meta as any).env?.VITE_SUPABASE_URL || '';
-const DEFAULT_SUPABASE_KEY = (import.meta as any).env?.VITE_SUPABASE_ANON_KEY || '';
+// Default environment credentials or PATEN credentials
+const DEFAULT_SUPABASE_URL = (import.meta as any).env?.VITE_SUPABASE_URL || PATEN_SUPABASE_URL;
+const DEFAULT_SUPABASE_KEY = (import.meta as any).env?.VITE_SUPABASE_ANON_KEY || PATEN_SUPABASE_ANON_KEY;
 
 let supabaseInstance: SupabaseClient | null = null;
+
+function sanitizeUrl(rawUrl: string): string {
+  if (!rawUrl) return '';
+  return rawUrl.replace(/\/rest\/v1\/?$/, '').replace(/\/$/, '');
+}
 
 export function getSupabaseConfig(): SupabaseConfig {
   const saved = localStorage.getItem('turnamen_kd_supabase_config');
   if (saved) {
     try {
-      return JSON.parse(saved);
+      const parsed = JSON.parse(saved);
+      if (parsed.url && parsed.anonKey) {
+        return {
+          ...parsed,
+          url: sanitizeUrl(parsed.url),
+        };
+      }
     } catch {
       // Fallback
     }
   }
   return {
-    url: DEFAULT_SUPABASE_URL,
+    url: sanitizeUrl(DEFAULT_SUPABASE_URL),
     anonKey: DEFAULT_SUPABASE_KEY,
-    enabled: Boolean(DEFAULT_SUPABASE_URL && DEFAULT_SUPABASE_KEY)
+    enabled: true
   };
 }
 
 export function saveSupabaseConfig(config: SupabaseConfig) {
-  localStorage.setItem('turnamen_kd_supabase_config', JSON.stringify(config));
+  const sanitized = {
+    ...config,
+    url: sanitizeUrl(config.url)
+  };
+  localStorage.setItem('turnamen_kd_supabase_config', JSON.stringify(sanitized));
   supabaseInstance = null; // reset client instance
 }
 
 export function getSupabaseClient(): SupabaseClient | null {
   const config = getSupabaseConfig();
   if (!config.enabled || !config.url || !config.anonKey) {
-    return null;
+    return patenClient;
   }
   if (!supabaseInstance) {
     try {
-      supabaseInstance = createClient(config.url, config.anonKey, {
-        auth: { persistSession: false },
-        realtime: { params: { eventsPerSecond: 10 } }
-      });
+      const cleanUrl = sanitizeUrl(config.url);
+      if (cleanUrl === PATEN_SUPABASE_URL && config.anonKey === PATEN_SUPABASE_ANON_KEY) {
+        supabaseInstance = patenClient;
+      } else {
+        supabaseInstance = createClient(cleanUrl, config.anonKey, {
+          auth: { persistSession: true, autoRefreshToken: true },
+          realtime: { params: { eventsPerSecond: 10 } }
+        });
+      }
     } catch (err) {
       console.error('Failed to initialize Supabase client:', err);
-      return null;
+      return patenClient;
     }
   }
   return supabaseInstance;
