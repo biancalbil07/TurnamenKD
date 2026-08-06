@@ -1,0 +1,6 @@
+{
+  "name": "Turnamen KD",
+  "description": "Aplikasi Manajemen Turnamen & Sistem Bagan Pertandingan Real-Time berbasis React, TypeScript, Tailwind CSS, dan Supabase Database.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
