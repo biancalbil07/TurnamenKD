@@ -27,14 +27,14 @@ const DEFAULT_TOURNAMENT: Tournament = {
 };
 
 const DEFAULT_TEAMS: Team[] = [
-  { id: 'team_1', tournament_id: DEFAULT_TOURNAMENT.id, name: 'Garuda FC', seed: 1, logo_emoji: '🦅', time_slot: '09:00 - 15:00' },
-  { id: 'team_2', tournament_id: DEFAULT_TOURNAMENT.id, name: 'Persib Muda', seed: 2, logo_emoji: '🔵', time_slot: '09:00 - 15:00' },
-  { id: 'team_3', tournament_id: DEFAULT_TOURNAMENT.id, name: 'Arema Thunder', seed: 3, logo_emoji: '⚡', time_slot: '09:00 - 15:00' },
-  { id: 'team_4', tournament_id: DEFAULT_TOURNAMENT.id, name: 'Persebaya Blitz', seed: 4, logo_emoji: '🟢', time_slot: '09:00 - 15:00' },
-  { id: 'team_5', tournament_id: DEFAULT_TOURNAMENT.id, name: 'PSM Makassar', seed: 5, logo_emoji: '🔴', time_slot: '16:00 - 22:00' },
-  { id: 'team_6', tournament_id: DEFAULT_TOURNAMENT.id, name: 'Bali United Stars', seed: 6, logo_emoji: '🌴', time_slot: '16:00 - 22:00' },
-  { id: 'team_7', tournament_id: DEFAULT_TOURNAMENT.id, name: 'Sriwijaya Dragons', seed: 7, logo_emoji: '🐉', time_slot: '16:00 - 22:00' },
-  { id: 'team_8', tournament_id: DEFAULT_TOURNAMENT.id, name: 'Persija Strikers', seed: 8, logo_emoji: '🐯', time_slot: '16:00 - 22:00' },
+  { id: 'team_1', tournament_id: DEFAULT_TOURNAMENT.id, name: 'Garuda FC', seed: 1, logo_emoji: '🦅', time_slot: '10:00 - 15:00' },
+  { id: 'team_2', tournament_id: DEFAULT_TOURNAMENT.id, name: 'Persib Muda', seed: 2, logo_emoji: '🔵', time_slot: '10:00 - 15:00' },
+  { id: 'team_3', tournament_id: DEFAULT_TOURNAMENT.id, name: 'Arema Thunder', seed: 3, logo_emoji: '⚡', time_slot: '10:00 - 15:00' },
+  { id: 'team_4', tournament_id: DEFAULT_TOURNAMENT.id, name: 'Persebaya Blitz', seed: 4, logo_emoji: '🟢', time_slot: '10:00 - 15:00' },
+  { id: 'team_5', tournament_id: DEFAULT_TOURNAMENT.id, name: 'PSM Makassar', seed: 5, logo_emoji: '🔴', time_slot: '17:30 - 22:00' },
+  { id: 'team_6', tournament_id: DEFAULT_TOURNAMENT.id, name: 'Bali United Stars', seed: 6, logo_emoji: '🌴', time_slot: '17:30 - 22:00' },
+  { id: 'team_7', tournament_id: DEFAULT_TOURNAMENT.id, name: 'Sriwijaya Dragons', seed: 7, logo_emoji: '🐉', time_slot: '17:30 - 22:00' },
+  { id: 'team_8', tournament_id: DEFAULT_TOURNAMENT.id, name: 'Persija Strikers', seed: 8, logo_emoji: '🐯', time_slot: '17:30 - 22:00' },
 ];
 
 const DEFAULT_MEMBERS: PanitiaMember[] = [

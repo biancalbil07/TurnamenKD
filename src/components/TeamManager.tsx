@@ -22,7 +22,7 @@ export const TeamManager: React.FC<TeamManagerProps> = ({
   if (!tournament) return null;
 
   const activeSlots = timeSlotsProp && timeSlotsProp.length > 0 ? timeSlotsProp : getTimeSlots();
-  const defaultSlotLabel = activeSlots[0]?.slot_label || '09:00 - 15:00';
+  const defaultSlotLabel = activeSlots[0]?.slot_label || '10:00 - 15:00';
 
   const tournamentTeams = teams.filter((t) => t.tournament_id === tournament.id);
 

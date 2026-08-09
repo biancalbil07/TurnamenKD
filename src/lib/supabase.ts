@@ -110,7 +110,7 @@ CREATE TABLE IF NOT EXISTS public.teams (
   name TEXT NOT NULL,
   seed INT DEFAULT 0,
   logo_emoji TEXT DEFAULT '⚽',
-  time_slot TEXT DEFAULT '09:00 - 15:00'
+  time_slot TEXT DEFAULT '10:00 - 15:00'
 );
 
 -- 3. Matches Table
@@ -133,7 +133,7 @@ CREATE TABLE IF NOT EXISTS public.matches (
   venue TEXT DEFAULT 'Lapangan A',
   date TEXT,
   time TEXT,
-  time_slot TEXT DEFAULT '09:00 - 15:00',
+  time_slot TEXT DEFAULT '10:00 - 15:00',
   updated_at TIMESTAMPTZ DEFAULT NOW(),
   is_third_place BOOLEAN DEFAULT false
 );
@@ -227,8 +227,9 @@ ON CONFLICT (id) DO NOTHING;
 
 INSERT INTO public.time_slots (id, slot_label, is_default)
 VALUES 
-  ('slot_1', '09:00 - 15:00', true),
-  ('slot_2', '16:00 - 22:00', true)
+  ('slot_1', '10:00 - 15:00', true),
+  ('slot_2', '17:30 - 22:00', true),
+  ('slot_3', '23:00 - Selesai', true)
 ON CONFLICT (id) DO NOTHING;
 
 INSERT INTO public.telegram_settings (id, bot1_enabled, bot2_enabled, auto_notify_score, auto_notify_schedule)

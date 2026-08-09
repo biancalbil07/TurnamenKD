@@ -175,7 +175,7 @@ export const ScheduleView: React.FC<ScheduleViewProps> = ({
                               className={`text-[9px] font-extrabold px-1.5 py-0.5 rounded border ${
                                 m.time_slot === '23:00 - Selesai'
                                   ? 'bg-rose-100 text-rose-800 border-rose-300 animate-pulse'
-                                  : m.time_slot === '16:00 - 22:00'
+                                  : m.time_slot === '17:30 - 22:00' || m.time_slot === '16:00 - 22:00'
                                   ? 'bg-indigo-100 text-indigo-800 border-indigo-300'
                                   : 'bg-amber-100 text-amber-800 border-amber-300'
                               }`}

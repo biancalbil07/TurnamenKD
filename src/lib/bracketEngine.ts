@@ -40,38 +40,94 @@ export function formatShortDate(dateStr: string): string {
   return `${d.getDate()} ${months[d.getMonth()]}`;
 }
 
+export function isMorningSlot(slot?: string): boolean {
+  if (!slot) return true;
+  const s = slot.toLowerCase().trim();
+  if (s.includes('17:30') || s.includes('16:00') || s.includes('22:00') || s.includes('23:00') || s.includes('sore') || s.includes('malam')) {
+    return false;
+  }
+  if (s.includes('10:00') || s.includes('09:00') || s.includes('15:00') || s.includes('pagi') || s.includes('siang')) {
+    return true;
+  }
+  return true;
+}
+
 /**
- * Helper to group and pair teams by time_slot (09:00 - 15:00 vs 16:00 - 22:00)
+ * Helper to group and pair teams by time_slot preference (Pagi vs Pagi, Sore vs Sore)
  */
-export function seedTeamsByTimeSlot(teams: Team[], shuffle = false): Team[] {
-  const groups = new Map<string, Team[]>();
+export function seedTeamsByTimeSlot(
+  teams: Team[],
+  shuffle = false,
+  totalByeCount = 0
+): {
+  orderedTeams: Team[];
+  byeTeams: Team[];
+  r1Teams: Team[];
+} {
+  const morningTeams: Team[] = [];
+  const eveningTeams: Team[] = [];
 
   teams.forEach((t) => {
-    const slot = t.time_slot || '09:00 - 15:00';
-    if (!groups.has(slot)) {
-      groups.set(slot, []);
+    if (isMorningSlot(t.time_slot)) {
+      morningTeams.push(t);
+    } else {
+      eveningTeams.push(t);
     }
-    groups.get(slot)!.push(t);
   });
 
-  const result: Team[] = [];
+  const sortFn = (a: Team, b: Team) => (a.seed || 0) - (b.seed || 0);
 
-  groups.forEach((groupTeams) => {
-    if (shuffle) {
-      groupTeams.sort(() => Math.random() - 0.5);
-    } else {
-      groupTeams.sort((a, b) => (a.seed || 0) - (b.seed || 0));
-    }
+  if (shuffle) {
+    morningTeams.sort(() => Math.random() - 0.5);
+    eveningTeams.sort(() => Math.random() - 0.5);
+  } else {
+    morningTeams.sort(sortFn);
+    eveningTeams.sort(sortFn);
+  }
 
-    for (let i = 0; i < groupTeams.length; i += 2) {
-      result.push(groupTeams[i]);
-      if (i + 1 < groupTeams.length) {
-        result.push(groupTeams[i + 1]);
+  let mByes = 0;
+  let eByes = 0;
+
+  if (totalByeCount > 0) {
+    let bestScore = -10;
+    let bestMByes = 0;
+    let bestEByes = 0;
+
+    for (let mb = 0; mb <= Math.min(totalByeCount, morningTeams.length); mb++) {
+      const eb = totalByeCount - mb;
+      if (eb < 0 || eb > eveningTeams.length) continue;
+
+      const mR1Count = morningTeams.length - mb;
+      const eR1Count = eveningTeams.length - eb;
+
+      let score = 0;
+      if (mR1Count % 2 === 0) score += 2;
+      if (eR1Count % 2 === 0) score += 2;
+
+      score -= Math.abs(mb - eb) * 0.1;
+
+      if (score > bestScore) {
+        bestScore = score;
+        bestMByes = mb;
+        bestEByes = eb;
       }
     }
-  });
 
-  return result;
+    mByes = bestMByes;
+    eByes = bestEByes;
+  }
+
+  const morningBYETeams = morningTeams.slice(0, mByes);
+  const morningR1Teams = morningTeams.slice(mByes);
+
+  const eveningBYETeams = eveningTeams.slice(0, eByes);
+  const eveningR1Teams = eveningTeams.slice(eByes);
+
+  const byeTeams = [...morningBYETeams, ...eveningBYETeams];
+  const r1Teams = [...morningR1Teams, ...eveningR1Teams];
+  const orderedTeams = [...byeTeams, ...r1Teams];
+
+  return { orderedTeams, byeTeams, r1Teams };
 }
 
 /**
@@ -251,13 +307,13 @@ export function generateKnockoutMatches(
 ): Match[] {
   if (teams.length < 2) return [];
 
-  const orderedTeams = seedTeamsByTimeSlot(teams, shuffle);
-  const teamCount = orderedTeams.length;
+  const teamCount = teams.length;
   const bracketSize = getBracketSize(teamCount); // e.g. 8 or 16 or 32
   const totalRounds = Math.log2(bracketSize);
 
   const byeCount = bracketSize - teamCount;
-  const numR1Matches = teamCount - bracketSize / 2; // Real matches in Round 1
+  const { orderedTeams, byeTeams, r1Teams } = seedTeamsByTimeSlot(teams, shuffle, byeCount);
+  const numR1Matches = r1Teams.length / 2; // Real matches in Round 1
 
   const allMatches: Match[] = [];
   const matchesByRound: Match[][] = [];
@@ -291,8 +347,8 @@ export function generateKnockoutMatches(
         status: 'scheduled',
         venue: 'Lapangan A',
         date: startDateStr,
-        time: '09:00',
-        time_slot: '09:00 - 15:00',
+        time: '10:00',
+        time_slot: '10:00 - 15:00',
         updated_at: now,
       });
     }
@@ -306,11 +362,13 @@ export function generateKnockoutMatches(
     round1.forEach((match, idx) => {
       const t1 = orderedTeams[idx * 2];
       const t2 = orderedTeams[idx * 2 + 1];
-      match.team1_id = t1.id;
-      match.team1_name = t1.name;
-      match.team2_id = t2.id;
-      match.team2_name = t2.name;
-      match.time_slot = t1.time_slot || t2.time_slot || '09:00 - 15:00';
+      if (t1 && t2) {
+        match.team1_id = t1.id;
+        match.team1_name = t1.name;
+        match.team2_id = t2.id;
+        match.team2_name = t2.name;
+        match.time_slot = isMorningSlot(t1.time_slot) ? '10:00 - 15:00' : '17:30 - 22:00';
+      }
     });
 
     // Standard next_match links for all rounds
@@ -327,12 +385,10 @@ export function generateKnockoutMatches(
     }
   } else {
     // BYE Placement:
-    // Top `byeCount` teams receive BYE directly into Round 2 slots.
-    // Remaining `2 * numR1Matches` teams play in `numR1Matches` Round 1 matches.
-    const byeTeams = orderedTeams.slice(0, byeCount);
-    const r1Teams = orderedTeams.slice(byeCount);
+    // `byeTeams` skip Round 1 directly into Round 2 slots.
+    // `r1Teams` play in Round 1 matches.
 
-    // Populate Round 1 matches with real teams only (NO dummy BYE matches)
+    // Populate Round 1 matches with real teams only
     const round1 = matchesByRound[0];
     round1.forEach((match, idx) => {
       const t1 = r1Teams[idx * 2];
@@ -342,7 +398,11 @@ export function generateKnockoutMatches(
         match.team1_name = t1.name;
         match.team2_id = t2.id;
         match.team2_name = t2.name;
-        match.time_slot = t1.time_slot || t2.time_slot || '09:00 - 15:00';
+        match.time_slot = isMorningSlot(t1.time_slot) ? '10:00 - 15:00' : '17:30 - 22:00';
+      } else if (t1) {
+        match.team1_id = t1.id;
+        match.team1_name = t1.name;
+        match.time_slot = isMorningSlot(t1.time_slot) ? '10:00 - 15:00' : '17:30 - 22:00';
       }
     });
 
@@ -421,7 +481,7 @@ export function generateKnockoutMatches(
       const dayIdx = Math.min(numDays - 1, Math.floor((mIdx / numMatches) * numDays));
       const clock = dayClocks[dayIdx] || dayClocks[0];
 
-      const preferEvening = m.time_slot ? m.time_slot.includes('16:00') : false;
+      const preferEvening = m.time_slot ? !isMorningSlot(m.time_slot) : false;
       const slotAlloc = clock.allocateSlot(preferEvening);
 
       m.date = slotAlloc.date;
@@ -436,7 +496,7 @@ export function generateKnockoutMatches(
   if (finalMatch) {
     finalMatch.date = finalDate;
     finalMatch.time = '19:00';
-    finalMatch.time_slot = '16:00 - 22:00';
+    finalMatch.time_slot = '17:30 - 22:00';
     finalMatch.venue = 'Lapangan Utama';
   }
 
@@ -460,8 +520,8 @@ export function generateKnockoutMatches(
       status: 'scheduled',
       venue: 'Lapangan Utama',
       date: finalDate, // Locked to peak final day
-      time: '16:00',
-      time_slot: '16:00 - 22:00',
+      time: '17:30',
+      time_slot: '17:30 - 22:00',
       updated_at: now,
       is_third_place: true,
     };
