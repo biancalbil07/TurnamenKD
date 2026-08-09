@@ -36,6 +36,8 @@ export const TeamManager: React.FC<TeamManagerProps> = ({
   const [showBulkModal, setShowBulkModal] = useState(false);
   const [shuffleMode, setShuffleMode] = useState(false);
   const [includeThirdPlace, setIncludeThirdPlace] = useState(tournament.third_place_match ?? true);
+  const [startDate, setStartDate] = useState(tournament.start_date || '2026-08-10');
+  const [endDate, setEndDate] = useState(tournament.end_date || '2026-08-16');
   const [isSaved, setIsSaved] = useState(false);
 
   // Calculate bracket sizing & BYE count
@@ -132,7 +134,9 @@ export const TeamManager: React.FC<TeamManagerProps> = ({
       teamList,
       shuffleMode,
       includeThirdPlace,
-      currentUser
+      currentUser,
+      startDate,
+      endDate
     );
 
     setIsSaved(true);
@@ -231,7 +235,7 @@ export const TeamManager: React.FC<TeamManagerProps> = ({
         </form>
 
         <div className="flex flex-wrap items-center justify-between gap-4 pt-2 border-t border-slate-100 text-xs">
-          <div className="flex items-center gap-4">
+          <div className="flex flex-wrap items-center gap-4">
             <button
               type="button"
               onClick={handleShuffleTeams}
@@ -247,13 +251,30 @@ export const TeamManager: React.FC<TeamManagerProps> = ({
                 onChange={(e) => setIncludeThirdPlace(e.target.checked)}
                 className="rounded text-red-600 focus:ring-red-500 w-4 h-4"
               />
-              Sertakan Pertandingan Perebutan Juara 3
+              Sertakan Perebutan Juara 3
             </label>
           </div>
 
-          <span className="text-slate-400 italic">
-            Tim akan otomatis di-pairing di babak awal berdasarkan pilihan Slot Jam Main yang sama!
-          </span>
+          <div className="flex items-center gap-3 bg-slate-50 p-2 rounded-xl border border-slate-200">
+            <div className="flex items-center gap-1.5">
+              <span className="font-bold text-slate-700">Tgl Mulai:</span>
+              <input
+                type="date"
+                value={startDate}
+                onChange={(e) => setStartDate(e.target.value)}
+                className="px-2 py-1 bg-white border border-slate-300 rounded-lg font-bold text-slate-800 focus:outline-none focus:ring-2 focus:ring-red-500 text-xs"
+              />
+            </div>
+            <div className="flex items-center gap-1.5">
+              <span className="font-bold text-slate-700">Tgl Selesai (Final):</span>
+              <input
+                type="date"
+                value={endDate}
+                onChange={(e) => setEndDate(e.target.value)}
+                className="px-2 py-1 bg-white border border-slate-300 rounded-lg font-bold text-slate-800 focus:outline-none focus:ring-2 focus:ring-red-500 text-xs"
+              />
+            </div>
+          </div>
         </div>
 
       </div>

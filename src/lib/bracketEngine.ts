@@ -96,12 +96,15 @@ function getFeederOrder(length: number): number[] {
  */
 class ScheduleClock {
   private currentDate: Date;
+  private endDate: Date;
+  private courts = ['Lapangan A', 'Lapangan B'];
+  private currentCourtIndex = 0;
   private morningStart = 9;
   private morningEnd = 15;
   private eveningStart = 16;
   private eveningEnd = 22;
 
-  constructor(startDateStr = '2026-08-14', timeSlots?: TimeSlot[]) {
+  constructor(startDateStr = '2026-08-10', endDateStr = '2026-08-16', timeSlots?: TimeSlot[]) {
     // Parse custom time slots if available
     if (timeSlots && timeSlots.length >= 2) {
       const s1Match = timeSlots[0].slot_label.match(/(\d{1,2}):\d{2}\s*-\s*(\d{1,2}):\d{2}/);
@@ -116,11 +119,18 @@ class ScheduleClock {
       }
     }
 
-    const parts = startDateStr.split('-').map(Number);
-    if (parts.length === 3) {
-      this.currentDate = new Date(parts[0], parts[1] - 1, parts[2], this.morningStart, 0, 0);
+    const startParts = startDateStr.split('-').map(Number);
+    if (startParts.length === 3) {
+      this.currentDate = new Date(startParts[0], startParts[1] - 1, startParts[2], this.morningStart, 0, 0);
     } else {
-      this.currentDate = new Date(2026, 7, 14, this.morningStart, 0, 0); // Default 14 Aug 2026
+      this.currentDate = new Date(2026, 7, 10, this.morningStart, 0, 0);
+    }
+
+    const endParts = endDateStr.split('-').map(Number);
+    if (endParts.length === 3) {
+      this.endDate = new Date(endParts[0], endParts[1] - 1, endParts[2], this.eveningEnd, 0, 0);
+    } else {
+      this.endDate = new Date(2026, 7, 16, this.eveningEnd, 0, 0);
     }
   }
 
@@ -145,49 +155,63 @@ class ScheduleClock {
     return `${y}-${m}-${d}`;
   }
 
-  allocateSlot(requestedSlot?: string): { date: string; time: string; time_slot: string } {
+  allocateSlot(requestedSlot?: string): { date: string; time: string; time_slot: string; venue: string } {
     let hour = this.currentDate.getHours();
 
-    // If reached end of morning slot (e.g. 15:00), shift to start of evening slot (16:00)
     if (hour >= this.morningEnd && hour < this.eveningStart) {
       this.currentDate.setHours(this.eveningStart, 0, 0, 0);
+      this.currentCourtIndex = 0;
     }
-    // If reached end of evening slot (e.g. 22:00), rollover to NEXT DAY at 09:00!
     if (this.currentDate.getHours() >= this.eveningEnd) {
       this.currentDate.setDate(this.currentDate.getDate() + 1);
       this.currentDate.setHours(this.morningStart, 0, 0, 0);
+      this.currentCourtIndex = 0;
     }
 
-    // Align with requested slot preference if specified
-    if (requestedSlot && requestedSlot.includes('16:00') && this.currentDate.getHours() < this.eveningStart) {
+    if (this.currentDate > this.endDate) {
+      this.currentDate = new Date(this.endDate);
+      this.currentDate.setHours(this.morningStart, 0, 0, 0);
+    }
+
+    if (requestedSlot && requestedSlot.includes(`${this.eveningStart}:00`) && this.currentDate.getHours() < this.eveningStart) {
       this.currentDate.setHours(this.eveningStart, 0, 0, 0);
+      this.currentCourtIndex = 0;
     }
 
     const date = this.getDateISO();
     const time = this.getTimeString();
     const time_slot = this.getSlotLabel();
+    const venue = this.courts[this.currentCourtIndex];
 
-    // Advance clock by 1 hour for next match
-    this.currentDate.setHours(this.currentDate.getHours() + 1);
+    // Multi-court parallel increment
+    this.currentCourtIndex++;
+    if (this.currentCourtIndex >= this.courts.length) {
+      this.currentCourtIndex = 0;
+      this.currentDate.setHours(this.currentDate.getHours() + 1);
 
-    // Re-check boundaries after increment
-    hour = this.currentDate.getHours();
-    if (hour >= this.morningEnd && hour < this.eveningStart) {
-      this.currentDate.setHours(this.eveningStart, 0, 0, 0);
-    } else if (hour >= this.eveningEnd) {
-      this.currentDate.setDate(this.currentDate.getDate() + 1);
-      this.currentDate.setHours(this.morningStart, 0, 0, 0);
+      hour = this.currentDate.getHours();
+      if (hour >= this.morningEnd && hour < this.eveningStart) {
+        this.currentDate.setHours(this.eveningStart, 0, 0, 0);
+      } else if (hour >= this.eveningEnd) {
+        this.currentDate.setDate(this.currentDate.getDate() + 1);
+        this.currentDate.setHours(this.morningStart, 0, 0, 0);
+      }
+
+      if (this.currentDate > this.endDate) {
+        this.currentDate = new Date(this.endDate);
+        this.currentDate.setHours(this.eveningStart, 0, 0, 0);
+      }
     }
 
-    return { date, time, time_slot };
+    return { date, time, time_slot, venue };
   }
 }
 
 /**
  * Generates a complete knockout bracket with:
  * 1. Proper BYE placement (BYE teams skip Babak 1 and stand directly in Babak 2 waiting for Round 1 winners).
- * 2. Multi-Day Automatic Scheduling with JS Date objects (09:00-15:00 & 16:00-22:00).
- * 3. Final & 3rd Place match strictly locked to 16 August (puncak event).
+ * 2. Multi-Day Automatic Scheduling with JS Date objects (Sequential & Multi-Court Parallel).
+ * 3. Final & 3rd Place match strictly locked to the peak final day (endDateStr, default 16 August).
  */
 export function generateKnockoutMatches(
   tournamentId: string,
@@ -195,7 +219,8 @@ export function generateKnockoutMatches(
   includeThirdPlace = true,
   shuffle = false,
   timeSlots?: TimeSlot[],
-  startDateStr = '2026-08-14'
+  startDateStr = '2026-08-10',
+  endDateStr = '2026-08-16'
 ): Match[] {
   if (teams.length < 2) return [];
 
@@ -344,24 +369,24 @@ export function generateKnockoutMatches(
   }
 
   // Multi-Day Automatic Time & Date Allocation (Clock Engine)
-  const clock = new ScheduleClock(startDateStr, timeSlots);
+  const clock = new ScheduleClock(startDateStr, endDateStr, timeSlots);
 
   // Allocate dates/times round by round for early rounds
   for (let r = 0; r < totalRounds - 1; r++) {
     const roundMatches = matchesByRound[r];
-    roundMatches.forEach((m, i) => {
-      m.venue = i % 2 === 0 ? 'Lapangan A' : 'Lapangan B';
+    roundMatches.forEach((m) => {
       const slotAlloc = clock.allocateSlot(m.time_slot);
       m.date = slotAlloc.date;
       m.time = slotAlloc.time;
       m.time_slot = slotAlloc.time_slot;
+      m.venue = slotAlloc.venue;
     });
   }
 
-  // Locked Final Day (16 Agustus) for FINAL and 3rd Place Match
+  // Locked Final Day (endDateStr - e.g. 16 Agustus) for FINAL and 3rd Place Match
   const finalMatch = matchesByRound[totalRounds - 1][0];
   if (finalMatch) {
-    finalMatch.date = '2026-08-16';
+    finalMatch.date = endDateStr;
     finalMatch.time = '19:00';
     finalMatch.time_slot = '16:00 - 22:00';
     finalMatch.venue = 'Lapangan Utama';
@@ -386,7 +411,7 @@ export function generateKnockoutMatches(
       next_match_slot: null,
       status: 'scheduled',
       venue: 'Lapangan Utama',
-      date: '2026-08-16', // Locked to 16 Agustus
+      date: endDateStr, // Locked to peak final day
       time: '16:00',
       time_slot: '16:00 - 22:00',
       updated_at: now,

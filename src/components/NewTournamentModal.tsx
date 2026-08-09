@@ -16,6 +16,8 @@ export const NewTournamentModal: React.FC<NewTournamentModalProps> = ({
 }) => {
   const [name, setName] = useState('');
   const [category, setCategory] = useState<TournamentCategory>('Futsal');
+  const [startDate, setStartDate] = useState('2026-08-10');
+  const [endDate, setEndDate] = useState('2026-08-16');
   const [thirdPlace, setThirdPlace] = useState(true);
   const [teamsText, setTeamsText] = useState('Garuda FC\nPersib Muda\nArema Thunder\nPersebaya Blitz\nPSM Makassar\nBali United\nSriwijaya FC\nPersija Strikers');
 
@@ -31,6 +33,8 @@ export const NewTournamentModal: React.FC<NewTournamentModalProps> = ({
       status: 'active',
       created_at: new Date().toISOString(),
       third_place_match: thirdPlace,
+      start_date: startDate,
+      end_date: endDate,
     };
 
     const teamLines = teamsText
@@ -107,6 +111,29 @@ export const NewTournamentModal: React.FC<NewTournamentModalProps> = ({
                 />
                 Perebutan Juara 3
               </label>
+            </div>
+          </div>
+
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label className="block font-bold text-slate-700 mb-1">Tanggal Mulai</label>
+              <input
+                type="date"
+                value={startDate}
+                onChange={(e) => setStartDate(e.target.value)}
+                className="w-full px-3 py-2 bg-slate-50 border border-slate-300 rounded-xl font-medium text-slate-800"
+                required
+              />
+            </div>
+            <div>
+              <label className="block font-bold text-slate-700 mb-1">Tanggal Selesai (Final)</label>
+              <input
+                type="date"
+                value={endDate}
+                onChange={(e) => setEndDate(e.target.value)}
+                className="w-full px-3 py-2 bg-slate-50 border border-slate-300 rounded-xl font-medium text-slate-800"
+                required
+              />
             </div>
           </div>
 

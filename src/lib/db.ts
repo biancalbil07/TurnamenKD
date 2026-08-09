@@ -21,6 +21,8 @@ const DEFAULT_TOURNAMENT: Tournament = {
   status: 'active',
   created_at: new Date().toISOString(),
   third_place_match: true,
+  start_date: '2026-08-10',
+  end_date: '2026-08-16',
 };
 
 const DEFAULT_TEAMS: Team[] = [
@@ -110,7 +112,15 @@ export async function initDatabase() {
   if (appData.tournaments.length === 0) {
     appData.tournaments = [DEFAULT_TOURNAMENT];
     appData.teams = DEFAULT_TEAMS;
-    appData.matches = generateKnockoutMatches(DEFAULT_TOURNAMENT.id, DEFAULT_TEAMS, true, false, DEFAULT_TIME_SLOTS);
+    appData.matches = generateKnockoutMatches(
+      DEFAULT_TOURNAMENT.id,
+      DEFAULT_TEAMS,
+      true,
+      false,
+      DEFAULT_TIME_SLOTS,
+      DEFAULT_TOURNAMENT.start_date || '2026-08-10',
+      DEFAULT_TOURNAMENT.end_date || '2026-08-16'
+    );
     appData.panitiaMembers = DEFAULT_MEMBERS;
     appData.timeSlots = DEFAULT_TIME_SLOTS;
     appData.auditLogs = [
@@ -336,12 +346,23 @@ export function setActiveTournamentId(id: string) {
 }
 
 export async function addTournament(tournament: Tournament, initialTeams: Team[], currentUser: { name: string; role: string }) {
+  if (!tournament.start_date) tournament.start_date = '2026-08-10';
+  if (!tournament.end_date) tournament.end_date = '2026-08-16';
+
   appData.tournaments.unshift(tournament);
   appData.activeTournamentId = tournament.id;
 
   if (initialTeams.length > 0) {
     appData.teams.push(...initialTeams);
-    const matches = generateKnockoutMatches(tournament.id, initialTeams, tournament.third_place_match, false, appData.timeSlots);
+    const matches = generateKnockoutMatches(
+      tournament.id,
+      initialTeams,
+      tournament.third_place_match,
+      false,
+      appData.timeSlots,
+      tournament.start_date,
+      tournament.end_date
+    );
     appData.matches.push(...matches);
   }
 
@@ -386,15 +407,36 @@ export async function saveTeamsAndRegenerateMatches(
   newTeams: Team[],
   shuffle: boolean,
   includeThirdPlace: boolean,
-  currentUser: { name: string; role: string }
+  currentUser: { name: string; role: string },
+  startDate?: string,
+  endDate?: string
 ) {
+  const tournament = appData.tournaments.find((t) => t.id === tournamentId);
+  if (tournament) {
+    if (startDate) tournament.start_date = startDate;
+    if (endDate) tournament.end_date = endDate;
+    tournament.third_place_match = includeThirdPlace;
+    await autoUpsert('tournaments', [tournament]);
+  }
+
+  const start = startDate || tournament?.start_date || '2026-08-10';
+  const end = endDate || tournament?.end_date || '2026-08-16';
+
   // Remove existing teams & matches for this tournament
   appData.teams = appData.teams.filter((t) => t.tournament_id !== tournamentId);
   appData.matches = appData.matches.filter((m) => m.tournament_id !== tournamentId);
 
   appData.teams.push(...newTeams);
 
-  const newMatches = generateKnockoutMatches(tournamentId, newTeams, includeThirdPlace, shuffle, appData.timeSlots);
+  const newMatches = generateKnockoutMatches(
+    tournamentId,
+    newTeams,
+    includeThirdPlace,
+    shuffle,
+    appData.timeSlots,
+    start,
+    end
+  );
   appData.matches.push(...newMatches);
 
   logAudit(

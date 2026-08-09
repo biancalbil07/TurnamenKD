@@ -9,6 +9,8 @@ export interface Tournament {
   status: 'draft' | 'active' | 'completed';
   created_at: string;
   third_place_match?: boolean; // Whether to generate 3rd place match
+  start_date?: string; // e.g. '2026-08-10'
+  end_date?: string;   // e.g. '2026-08-16'
 }
 
 export interface TimeSlot {
