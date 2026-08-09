@@ -361,10 +361,12 @@ export class MultiDaySchedulerClock {
 }
 
 /**
- * Generates a complete knockout bracket with:
- * 1. Proper BYE placement (BYE teams skip Babak 1 and stand directly in Babak 2 waiting for Round 1 winners).
- * 2. Multi-Day Automatic Scheduling with JS Date objects (Sequential & Multi-Court Parallel).
- * 3. Final & 3rd Place match strictly locked to the peak final day (endDateStr, default 16 August).
+ * Generates a complete knockout bracket with Dual-Branch Architecture (Cabang Pagi & Cabang Sore):
+ * 1. Morning Branch (Top Half) contains ONLY Morning teams.
+ * 2. Evening Branch (Bottom Half) contains ONLY Evening teams.
+ * 3. Morning BYEs stay strictly in Morning Branch; Evening BYEs stay strictly in Evening Branch.
+ * 4. Internal branch matches run sequentially at 30-minute intervals.
+ * 5. Morning Winner and Evening Winner meet in Cross-Branch rounds (e.g. Grand Final) at flexible slot (23:00 - Selesai).
  */
 export function generateKnockoutMatches(
   tournamentId: string,
@@ -377,23 +379,79 @@ export function generateKnockoutMatches(
 ): Match[] {
   if (teams.length < 2) return [];
 
-  const teamCount = teams.length;
-  const bracketSize = getBracketSize(teamCount); // e.g. 8 or 16 or 32
-  const totalRounds = Math.log2(bracketSize);
+  const morningTeams: Team[] = [];
+  const eveningTeams: Team[] = [];
 
-  const byeCount = bracketSize - teamCount;
-  const { orderedTeams, byeTeams, r1Teams } = seedTeamsByTimeSlot(teams, shuffle, byeCount);
-  const numR1Matches = r1Teams.length / 2; // Real matches in Round 1
+  teams.forEach((t) => {
+    if (isMorningSlot(t.time_slot)) {
+      morningTeams.push(t);
+    } else {
+      eveningTeams.push(t);
+    }
+  });
+
+  const sortFn = (a: Team, b: Team) => (a.seed || 0) - (b.seed || 0);
+
+  if (shuffle) {
+    morningTeams.sort(() => Math.random() - 0.5);
+    eveningTeams.sort(() => Math.random() - 0.5);
+  } else {
+    morningTeams.sort(sortFn);
+    eveningTeams.sort(sortFn);
+  }
+
+  const numM = morningTeams.length;
+  const numE = eveningTeams.length;
+
+  let branchSize = 0;
+  if (numM > 0 && numE > 0) {
+    branchSize = Math.max(2, getBracketSize(numM), getBracketSize(numE));
+  } else if (numM > 0) {
+    branchSize = getBracketSize(numM);
+  } else if (numE > 0) {
+    branchSize = getBracketSize(numE);
+  } else {
+    return [];
+  }
+
+  const isDualBranch = numM > 0 && numE > 0;
+  const bracketSize = isDualBranch ? branchSize * 2 : branchSize;
+  const totalRounds = Math.log2(bracketSize);
+  const branchRounds = Math.log2(branchSize);
+
+  // Internal session BYE counts
+  const mByeCount = numM > 0 ? branchSize - numM : 0;
+  const eByeCount = numE > 0 ? branchSize - numE : 0;
+
+  const morningBYETeams = morningTeams.slice(0, mByeCount);
+  const morningR1Teams = morningTeams.slice(mByeCount);
+
+  const eveningBYETeams = eveningTeams.slice(0, eByeCount);
+  const eveningR1Teams = eveningTeams.slice(eByeCount);
+
+  const mR1MatchCount = Math.floor(morningR1Teams.length / 2);
+  const eR1MatchCount = Math.floor(eveningR1Teams.length / 2);
 
   const allMatches: Match[] = [];
   const matchesByRound: Match[][] = [];
   const now = new Date().toISOString();
 
-  // Initialize empty matches structure round by round
+  // Initialize empty match structures round by round
   for (let r = 1; r <= totalRounds; r++) {
-    const numMatchesInRound = r === 1 ? numR1Matches : bracketSize / Math.pow(2, r);
-    const roundMatches: Match[] = [];
+    let numMatchesInRound = 0;
+    if (r === 1) {
+      if (isDualBranch) {
+        numMatchesInRound = mR1MatchCount + eR1MatchCount;
+      } else if (numM > 0) {
+        numMatchesInRound = mR1MatchCount;
+      } else {
+        numMatchesInRound = eR1MatchCount;
+      }
+    } else {
+      numMatchesInRound = bracketSize / Math.pow(2, r);
+    }
 
+    const roundMatches: Match[] = [];
     for (let i = 0; i < numMatchesInRound; i++) {
       const matchId = `match_${tournamentId}_r${r}_m${i + 1}`;
       const code = `R${r}-M${i + 1}`;
@@ -425,73 +483,53 @@ export function generateKnockoutMatches(
     matchesByRound.push(roundMatches);
   }
 
-  // Populate Teams & Link Feeder Structure:
-  // If no BYEs (byeCount === 0), standard Round 1 initialization:
-  if (byeCount === 0) {
-    const round1 = matchesByRound[0];
-    round1.forEach((match, idx) => {
-      const t1 = orderedTeams[idx * 2];
-      const t2 = orderedTeams[idx * 2 + 1];
-      if (t1 && t2) {
+  // Populate Round 1 & Round 2 Feeder Structure
+  const round1 = matchesByRound[0] || [];
+
+  if (isDualBranch) {
+    // 1. Fill Morning R1 matches (Top Half)
+    for (let i = 0; i < mR1MatchCount; i++) {
+      const match = round1[i];
+      const t1 = morningR1Teams[i * 2];
+      const t2 = morningR1Teams[i * 2 + 1];
+      if (match && t1 && t2) {
         match.team1_id = t1.id;
         match.team1_name = t1.name;
         match.team2_id = t2.id;
         match.team2_name = t2.name;
-        match.time_slot = isMorningSlot(t1.time_slot) ? '10:00 - 15:00' : '17:30 - 22:00';
+        match.time_slot = '10:00 - 15:00';
       }
-    });
-
-    // Standard next_match links for all rounds
-    for (let r = 0; r < totalRounds - 1; r++) {
-      const currentRound = matchesByRound[r];
-      const nextRound = matchesByRound[r + 1];
-
-      currentRound.forEach((m, idx) => {
-        const targetMatchIdx = Math.floor(idx / 2);
-        const targetSlot = (idx % 2 === 0 ? 1 : 2) as 1 | 2;
-        m.next_match_id = nextRound[targetMatchIdx].id;
-        m.next_match_slot = targetSlot;
-      });
     }
-  } else {
-    // BYE Placement:
-    // `byeTeams` skip Round 1 directly into Round 2 slots.
-    // `r1Teams` play in Round 1 matches.
 
-    // Populate Round 1 matches with real teams only
-    const round1 = matchesByRound[0];
-    round1.forEach((match, idx) => {
-      const t1 = r1Teams[idx * 2];
-      const t2 = r1Teams[idx * 2 + 1];
-      if (t1 && t2) {
+    // 2. Fill Evening R1 matches (Bottom Half)
+    for (let i = 0; i < eR1MatchCount; i++) {
+      const match = round1[mR1MatchCount + i];
+      const t1 = eveningR1Teams[i * 2];
+      const t2 = eveningR1Teams[i * 2 + 1];
+      if (match && t1 && t2) {
         match.team1_id = t1.id;
         match.team1_name = t1.name;
         match.team2_id = t2.id;
         match.team2_name = t2.name;
-        match.time_slot = isMorningSlot(t1.time_slot) ? '10:00 - 15:00' : '17:30 - 22:00';
-      } else if (t1) {
-        match.team1_id = t1.id;
-        match.team1_name = t1.name;
-        match.time_slot = isMorningSlot(t1.time_slot) ? '10:00 - 15:00' : '17:30 - 22:00';
+        match.time_slot = '17:30 - 22:00';
       }
-    });
+    }
 
     // Map Round 2 Feeder slots
-    const totalR2Slots = bracketSize / 2;
-    const feederOrder = getFeederOrder(totalR2Slots);
-    const round2Matches = matchesByRound[1];
+    const halfR2Slots = branchSize / 2;
+    const feederOrder = getFeederOrder(halfR2Slots);
+    const round2Matches = matchesByRound[1] || [];
 
-    let byeTeamIdx = 0;
-    let r1MatchIdx = 0;
-
+    // Morning Branch R2 Seeding (Top Half)
+    let mByeIdx = 0;
+    let mR1Idx = 0;
     feederOrder.forEach((slotIndex, orderPos) => {
       const targetMatchIdx = Math.floor(slotIndex / 2);
       const targetSlot = (slotIndex % 2 === 0 ? 1 : 2) as 1 | 2;
       const r2Match = round2Matches[targetMatchIdx];
 
-      if (orderPos < byeCount) {
-        // Place BYE team directly in Round 2 slot (waiting for Round 1 winner or another BYE)
-        const byeTeam = byeTeams[byeTeamIdx++];
+      if (orderPos < mByeCount) {
+        const byeTeam = morningBYETeams[mByeIdx++];
         if (byeTeam && r2Match) {
           if (targetSlot === 1) {
             r2Match.team1_id = byeTeam.id;
@@ -502,11 +540,42 @@ export function generateKnockoutMatches(
           }
         }
       } else {
-        // Link a Round 1 match winner to this Round 2 slot
-        if (r1MatchIdx < round1.length) {
-          const r1Match = round1[r1MatchIdx++];
-          r1Match.next_match_id = r2Match.id;
-          r1Match.next_match_slot = targetSlot;
+        if (mR1Idx < mR1MatchCount) {
+          const r1Match = round1[mR1Idx++];
+          if (r1Match && r2Match) {
+            r1Match.next_match_id = r2Match.id;
+            r1Match.next_match_slot = targetSlot;
+          }
+        }
+      }
+    });
+
+    // Evening Branch R2 Seeding (Bottom Half)
+    let eByeIdx = 0;
+    let eR1Idx = 0;
+    feederOrder.forEach((slotIndex, orderPos) => {
+      const targetMatchIdx = Math.floor(halfR2Slots / 2) + Math.floor(slotIndex / 2);
+      const targetSlot = (slotIndex % 2 === 0 ? 1 : 2) as 1 | 2;
+      const r2Match = round2Matches[targetMatchIdx];
+
+      if (orderPos < eByeCount) {
+        const byeTeam = eveningBYETeams[eByeIdx++];
+        if (byeTeam && r2Match) {
+          if (targetSlot === 1) {
+            r2Match.team1_id = byeTeam.id;
+            r2Match.team1_name = byeTeam.name;
+          } else {
+            r2Match.team2_id = byeTeam.id;
+            r2Match.team2_name = byeTeam.name;
+          }
+        }
+      } else {
+        if (eR1Idx < eR1MatchCount) {
+          const r1Match = round1[mR1MatchCount + eR1Idx++];
+          if (r1Match && r2Match) {
+            r1Match.next_match_id = r2Match.id;
+            r1Match.next_match_slot = targetSlot;
+          }
         }
       }
     });
@@ -519,75 +588,130 @@ export function generateKnockoutMatches(
       currentRound.forEach((m, idx) => {
         const targetMatchIdx = Math.floor(idx / 2);
         const targetSlot = (idx % 2 === 0 ? 1 : 2) as 1 | 2;
-        m.next_match_id = nextRound[targetMatchIdx].id;
-        m.next_match_slot = targetSlot;
+        if (nextRound[targetMatchIdx]) {
+          m.next_match_id = nextRound[targetMatchIdx].id;
+          m.next_match_slot = targetSlot;
+        }
       });
+    }
+  } else {
+    // Single Branch (Only Morning or Only Evening)
+    const singleTeams = numM > 0 ? morningTeams : eveningTeams;
+    const byeCount = singleTeams.length > 0 ? branchSize - singleTeams.length : 0;
+    const byeTeams = singleTeams.slice(0, byeCount);
+    const r1Teams = singleTeams.slice(byeCount);
+
+    if (byeCount === 0) {
+      round1.forEach((match, idx) => {
+        const t1 = r1Teams[idx * 2];
+        const t2 = r1Teams[idx * 2 + 1];
+        if (t1 && t2) {
+          match.team1_id = t1.id;
+          match.team1_name = t1.name;
+          match.team2_id = t2.id;
+          match.team2_name = t2.name;
+          match.time_slot = isMorningSlot(t1.time_slot) ? '10:00 - 15:00' : '17:30 - 22:00';
+        }
+      });
+
+      for (let r = 0; r < totalRounds - 1; r++) {
+        const currentRound = matchesByRound[r];
+        const nextRound = matchesByRound[r + 1];
+        currentRound.forEach((m, idx) => {
+          const targetMatchIdx = Math.floor(idx / 2);
+          const targetSlot = (idx % 2 === 0 ? 1 : 2) as 1 | 2;
+          if (nextRound[targetMatchIdx]) {
+            m.next_match_id = nextRound[targetMatchIdx].id;
+            m.next_match_slot = targetSlot;
+          }
+        });
+      }
+    } else {
+      round1.forEach((match, idx) => {
+        const t1 = r1Teams[idx * 2];
+        const t2 = r1Teams[idx * 2 + 1];
+        if (t1 && t2) {
+          match.team1_id = t1.id;
+          match.team1_name = t1.name;
+          match.team2_id = t2.id;
+          match.team2_name = t2.name;
+          match.time_slot = isMorningSlot(t1.time_slot) ? '10:00 - 15:00' : '17:30 - 22:00';
+        }
+      });
+
+      const totalR2Slots = branchSize / 2;
+      const feederOrder = getFeederOrder(totalR2Slots);
+      const round2Matches = matchesByRound[1] || [];
+
+      let byeTeamIdx = 0;
+      let r1MatchIdx = 0;
+
+      feederOrder.forEach((slotIndex, orderPos) => {
+        const targetMatchIdx = Math.floor(slotIndex / 2);
+        const targetSlot = (slotIndex % 2 === 0 ? 1 : 2) as 1 | 2;
+        const r2Match = round2Matches[targetMatchIdx];
+
+        if (orderPos < byeCount) {
+          const byeTeam = byeTeams[byeTeamIdx++];
+          if (byeTeam && r2Match) {
+            if (targetSlot === 1) {
+              r2Match.team1_id = byeTeam.id;
+              r2Match.team1_name = byeTeam.name;
+            } else {
+              r2Match.team2_id = byeTeam.id;
+              r2Match.team2_name = byeTeam.name;
+            }
+          }
+        } else {
+          if (r1MatchIdx < round1.length) {
+            const r1Match = round1[r1MatchIdx++];
+            if (r1Match && r2Match) {
+              r1Match.next_match_id = r2Match.id;
+              r1Match.next_match_slot = targetSlot;
+            }
+          }
+        }
+      });
+
+      for (let r = 1; r < totalRounds - 1; r++) {
+        const currentRound = matchesByRound[r];
+        const nextRound = matchesByRound[r + 1];
+        currentRound.forEach((m, idx) => {
+          const targetMatchIdx = Math.floor(idx / 2);
+          const targetSlot = (idx % 2 === 0 ? 1 : 2) as 1 | 2;
+          if (nextRound[targetMatchIdx]) {
+            m.next_match_id = nextRound[targetMatchIdx].id;
+            m.next_match_slot = targetSlot;
+          }
+        });
+      }
     }
   }
 
-  // Compute dynamic session time_slots for all rounds:
-  // - Pure Morning vs Morning -> '10:00 - 15:00'
-  // - Pure Evening vs Evening -> '17:30 - 22:00'
-  // - Cross-Session / Mixed -> '23:00 - Selesai'
-  const teamMap = new Map<string, Team>(teams.map((t) => [t.id, t]));
-
+  // Assign session time_slots for matches
   for (let r = 0; r < totalRounds; r++) {
     const currentRoundMatches = matchesByRound[r];
+    const numInRound = currentRoundMatches.length;
 
-    currentRoundMatches.forEach((match) => {
-      if (r === 0) {
-        const t1 = match.team1_id ? teamMap.get(match.team1_id) : null;
-        const t2 = match.team2_id ? teamMap.get(match.team2_id) : null;
-
-        const isM1 = t1 ? isMorningSlot(t1.time_slot) : true;
-        const isM2 = t2 ? isMorningSlot(t2.time_slot) : true;
-
-        if (isM1 && isM2) {
-          match.time_slot = '10:00 - 15:00';
-        } else if (!isM1 && !isM2) {
-          match.time_slot = '17:30 - 22:00';
-        } else {
+    currentRoundMatches.forEach((match, idx) => {
+      if (isDualBranch) {
+        if (r + 1 > branchRounds) {
           match.time_slot = '23:00 - Selesai';
+        } else {
+          const isTopHalf = idx < numInRound / 2;
+          match.time_slot = isTopHalf ? '10:00 - 15:00' : '17:30 - 22:00';
         }
       } else {
-        const prevRoundMatches = matchesByRound[r - 1];
-
-        // Slot 1 origin
-        let s1: 'morning' | 'evening' | 'cross' = 'cross';
-        if (match.team1_id && teamMap.has(match.team1_id)) {
-          const t1 = teamMap.get(match.team1_id)!;
-          s1 = isMorningSlot(t1.time_slot) ? 'morning' : 'evening';
-        } else {
-          const f1 = prevRoundMatches.find((pm) => pm.next_match_id === match.id && pm.next_match_slot === 1);
-          if (f1) {
-            s1 = f1.time_slot === '10:00 - 15:00' ? 'morning' : f1.time_slot === '17:30 - 22:00' ? 'evening' : 'cross';
-          }
-        }
-
-        // Slot 2 origin
-        let s2: 'morning' | 'evening' | 'cross' = 'cross';
-        if (match.team2_id && teamMap.has(match.team2_id)) {
-          const t2 = teamMap.get(match.team2_id)!;
-          s2 = isMorningSlot(t2.time_slot) ? 'morning' : 'evening';
-        } else {
-          const f2 = prevRoundMatches.find((pm) => pm.next_match_id === match.id && pm.next_match_slot === 2);
-          if (f2) {
-            s2 = f2.time_slot === '10:00 - 15:00' ? 'morning' : f2.time_slot === '17:30 - 22:00' ? 'evening' : 'cross';
-          }
-        }
-
-        if (s1 === 'morning' && s2 === 'morning') {
+        if (numM > 0) {
           match.time_slot = '10:00 - 15:00';
-        } else if (s1 === 'evening' && s2 === 'evening') {
-          match.time_slot = '17:30 - 22:00';
         } else {
-          match.time_slot = '23:00 - Selesai';
+          match.time_slot = '17:30 - 22:00';
         }
       }
     });
   }
 
-  // Multi-Day Automatic Time & Date Allocation with Strict Session Isolation
+  // Multi-Day Automatic Time & Date Allocation with 30-minute intervals
   const allDates = generateDateList(startDateStr, endDateStr);
   const finalDate = allDates.length > 0 ? allDates[allDates.length - 1] : endDateStr;
   const preFinalDates = allDates.length > 1 ? allDates.slice(0, allDates.length - 1) : [startDateStr];
@@ -622,12 +746,12 @@ export function generateKnockoutMatches(
     });
   }
 
-  // Locked Final Day (finalDate - e.g. 16 Agustus) for FINAL and 3rd Place Match
-  const finalMatch = matchesByRound[totalRounds - 1][0];
+  // Locked Final Day for FINAL match
+  const finalMatch = matchesByRound[totalRounds - 1]?.[0];
   if (finalMatch) {
     finalMatch.date = finalDate;
     finalMatch.time = '19:00';
-    finalMatch.time_slot = '17:30 - 22:00';
+    finalMatch.time_slot = isDualBranch ? '23:00 - Selesai' : numM > 0 ? '10:00 - 15:00' : '17:30 - 22:00';
     finalMatch.venue = 'Lapangan Utama';
   }
 
@@ -650,7 +774,7 @@ export function generateKnockoutMatches(
       next_match_slot: null,
       status: 'scheduled',
       venue: 'Lapangan Utama',
-      date: finalDate, // Locked to peak final day
+      date: finalDate,
       time: '17:30',
       time_slot: '17:30 - 22:00',
       updated_at: now,
