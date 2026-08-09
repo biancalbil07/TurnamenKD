@@ -190,17 +190,51 @@ export const ScheduleView: React.FC<ScheduleViewProps> = ({
                       {/* Teams */}
                       <td className="px-4 py-3">
                         <div className="flex items-center justify-center gap-3 font-semibold text-slate-800">
-                          <span className={`px-2.5 py-1 rounded-lg ${
-                            m.winner_id === m.team1_id ? 'bg-emerald-100 text-emerald-800 font-extrabold' : 'bg-slate-50'
-                          }`}>
-                            🔴 {m.team1_name}
-                          </span>
-                          <span className="text-slate-400 font-bold text-[10px]">VS</span>
-                          <span className={`px-2.5 py-1 rounded-lg ${
-                            m.winner_id === m.team2_id ? 'bg-emerald-100 text-emerald-800 font-extrabold' : 'bg-slate-50'
-                          }`}>
-                            ⚪ {m.team2_name}
-                          </span>
+                          {(() => {
+                            const f1 = matches.find((x) => x.next_match_id === m.id && x.next_match_slot === 1);
+                            const t1Display =
+                              m.team1_name && m.team1_name !== 'TBD'
+                                ? m.team1_name
+                                : f1
+                                ? `Pemenang ${f1.match_code}`
+                                : 'Menunggu Tim';
+
+                            const f2 = matches.find((x) => x.next_match_id === m.id && x.next_match_slot === 2);
+                            const t2Display =
+                              m.team2_name && m.team2_name !== 'TBD'
+                                ? m.team2_name
+                                : f2
+                                ? `Pemenang ${f2.match_code}`
+                                : 'Menunggu Tim';
+
+                            return (
+                              <>
+                                <span
+                                  className={`px-2.5 py-1 rounded-lg ${
+                                    m.winner_id === m.team1_id
+                                      ? 'bg-emerald-100 text-emerald-800 font-extrabold'
+                                      : !m.team1_name || m.team1_name === 'TBD'
+                                      ? 'bg-amber-50 text-amber-800 border border-amber-200 text-xs font-bold'
+                                      : 'bg-slate-50'
+                                  }`}
+                                >
+                                  🔴 {t1Display}
+                                </span>
+                                <span className="text-slate-400 font-bold text-[10px]">VS</span>
+                                <span
+                                  className={`px-2.5 py-1 rounded-lg ${
+                                    m.winner_id === m.team2_id
+                                      ? 'bg-emerald-100 text-emerald-800 font-extrabold'
+                                      : !m.team2_name || m.team2_name === 'TBD'
+                                      ? 'bg-amber-50 text-amber-800 border border-amber-200 text-xs font-bold'
+                                      : 'bg-slate-50'
+                                  }`}
+                                >
+                                  ⚪ {t2Display}
+                                </span>
+                              </>
+                            );
+                          })()}
                         </div>
                       </td>
 

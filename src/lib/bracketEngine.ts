@@ -117,79 +117,82 @@ export function generateDateList(startDateStr: string, endDateStr: string): stri
 
 /**
  * Single Day Scheduler Clock for Parallel Courts & Time Slots
+ * Supports morning step scheduling (10:00 - 15:00) and flexible evening slots (17:30 - 22:00 up to max 23:00)
  */
 export class SingleDayClock {
   public dateStr: string;
-  private morningStart = 9;
+  private morningStart = 10;
   private morningEnd = 15;
-  private eveningStart = 16;
-  private eveningEnd = 22;
+  private eveningStart = 17.5; // 17:30
+  private eveningEnd = 23;    // flexible up to 23:00
   private courts = ['Lapangan A', 'Lapangan B'];
 
-  private currentMorningHour = 9;
+  private currentMorningTime = 10;
   private currentMorningCourtIdx = 0;
 
-  private currentEveningHour = 16;
+  private currentEveningTime = 17.5;
   private currentEveningCourtIdx = 0;
 
   constructor(dateStr: string, timeSlots?: TimeSlot[]) {
     this.dateStr = dateStr;
     if (timeSlots && timeSlots.length >= 2) {
-      const s1Match = timeSlots[0].slot_label.match(/(\d{1,2}):\d{2}\s*-\s*(\d{1,2}):\d{2}/);
-      const s2Match = timeSlots[1].slot_label.match(/(\d{1,2}):\d{2}\s*-\s*(\d{1,2}):\d{2}/);
+      const s1Match = timeSlots[0].slot_label.match(/(\d{1,2}):(\d{2})\s*-\s*(\d{1,2}):(\d{2})/);
+      const s2Match = timeSlots[1].slot_label.match(/(\d{1,2}):(\d{2})\s*-\s*(\d{1,2}):(\d{2})/);
       if (s1Match) {
-        this.morningStart = parseInt(s1Match[1], 10);
-        this.morningEnd = parseInt(s1Match[2], 10);
+        this.morningStart = parseInt(s1Match[1], 10) + (parseInt(s1Match[2], 10) / 60);
+        this.morningEnd = parseInt(s1Match[3], 10) + (parseInt(s1Match[4], 10) / 60);
       }
       if (s2Match) {
-        this.eveningStart = parseInt(s2Match[1], 10);
-        this.eveningEnd = parseInt(s2Match[2], 10);
+        this.eveningStart = parseInt(s2Match[1], 10) + (parseInt(s2Match[2], 10) / 60);
+        this.eveningEnd = Math.max(23, parseInt(s2Match[3], 10) + (parseInt(s2Match[4], 10) / 60));
       }
     }
-    this.currentMorningHour = this.morningStart;
-    this.currentEveningHour = this.eveningStart;
+    this.currentMorningTime = this.morningStart;
+    this.currentEveningTime = this.eveningStart;
   }
 
   allocateSlot(preferEvening = false): { date: string; time: string; time_slot: string; venue: string } {
     let isEvening = preferEvening;
 
-    if (!isEvening && this.currentMorningHour >= this.morningEnd) {
+    if (!isEvening && this.currentMorningTime >= this.morningEnd) {
       isEvening = true;
     }
 
-    if (isEvening && this.currentEveningHour >= this.eveningEnd) {
-      if (this.currentMorningHour < this.morningEnd) {
+    if (isEvening && this.currentEveningTime >= this.eveningEnd) {
+      if (this.currentMorningTime < this.morningEnd) {
         isEvening = false;
       }
     }
 
-    let hour: number;
+    let decimalTime: number;
     let courtIdx: number;
     let slotLabel: string;
 
     if (!isEvening) {
-      hour = Math.min(this.currentMorningHour, this.morningEnd - 1);
+      decimalTime = Math.min(this.currentMorningTime, this.morningEnd - 0.5);
       courtIdx = this.currentMorningCourtIdx;
-      slotLabel = `${String(this.morningStart).padStart(2, '0')}:00 - ${String(this.morningEnd).padStart(2, '0')}:00`;
+      slotLabel = '10:00 - 15:00';
 
       this.currentMorningCourtIdx++;
       if (this.currentMorningCourtIdx >= this.courts.length) {
         this.currentMorningCourtIdx = 0;
-        this.currentMorningHour++;
+        this.currentMorningTime += 1; // 1-hour step for next round of court matches
       }
     } else {
-      hour = Math.min(this.currentEveningHour, this.eveningEnd - 1);
+      decimalTime = Math.min(this.currentEveningTime, this.eveningEnd - 0.5);
       courtIdx = this.currentEveningCourtIdx;
-      slotLabel = `${String(this.eveningStart).padStart(2, '0')}:00 - ${String(this.eveningEnd).padStart(2, '0')}:00`;
+      slotLabel = decimalTime >= 22 ? '23:00 - Fleksibel' : '17:30 - 22:00';
 
       this.currentEveningCourtIdx++;
       if (this.currentEveningCourtIdx >= this.courts.length) {
         this.currentEveningCourtIdx = 0;
-        this.currentEveningHour++;
+        this.currentEveningTime += 1; // 1-hour step for evening slot
       }
     }
 
-    const timeStr = `${String(hour).padStart(2, '0')}:00`;
+    const h = Math.floor(decimalTime);
+    const m = Math.round((decimalTime - h) * 60);
+    const timeStr = `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}`;
     const venue = this.courts[courtIdx % this.courts.length];
 
     return {
@@ -443,6 +446,7 @@ export function generateKnockoutMatches(
 
 /**
  * Propagates winners through next_match_id links.
+ * Handles both completed matches with winner_id and BYE matches automatically.
  */
 export function applyAutoProgression(matches: Match[]): Match[] {
   const matchMap = new Map<string, Match>(matches.map((m) => [m.id, { ...m }]));
@@ -455,19 +459,35 @@ export function applyAutoProgression(matches: Match[]): Match[] {
     maxPasses--;
 
     for (const match of matchMap.values()) {
-      if (match.winner_id && match.next_match_id) {
+      let winnerId: string | null = match.winner_id;
+      let winnerName: string | null = null;
+
+      if (winnerId) {
+        winnerName = match.winner_id === match.team1_id ? match.team1_name : match.team2_name;
+      } else if (match.status === 'bye' || match.team1_name === 'BYE' || match.team2_name === 'BYE') {
+        if (match.team1_name === 'BYE' && match.team2_id && match.team2_name && match.team2_name !== 'TBD' && match.team2_name !== 'BYE') {
+          winnerId = match.team2_id;
+          winnerName = match.team2_name;
+          match.status = 'bye';
+        } else if (match.team2_name === 'BYE' && match.team1_id && match.team1_name && match.team1_name !== 'TBD' && match.team1_name !== 'BYE') {
+          winnerId = match.team1_id;
+          winnerName = match.team1_name;
+          match.status = 'bye';
+        }
+      }
+
+      if (winnerId && winnerName && match.next_match_id) {
         const nextMatch = matchMap.get(match.next_match_id);
         if (nextMatch) {
-          const winnerName = match.winner_id === match.team1_id ? match.team1_name : match.team2_name;
           const targetSlot = match.next_match_slot;
 
           let updatedNext = false;
-          if (targetSlot === 1 && (nextMatch.team1_id !== match.winner_id || nextMatch.team1_name !== winnerName)) {
-            nextMatch.team1_id = match.winner_id;
+          if (targetSlot === 1 && (nextMatch.team1_id !== winnerId || nextMatch.team1_name !== winnerName)) {
+            nextMatch.team1_id = winnerId;
             nextMatch.team1_name = winnerName;
             updatedNext = true;
-          } else if (targetSlot === 2 && (nextMatch.team2_id !== match.winner_id || nextMatch.team2_name !== winnerName)) {
-            nextMatch.team2_id = match.winner_id;
+          } else if (targetSlot === 2 && (nextMatch.team2_id !== winnerId || nextMatch.team2_name !== winnerName)) {
+            nextMatch.team2_id = winnerId;
             nextMatch.team2_name = winnerName;
             updatedNext = true;
           }

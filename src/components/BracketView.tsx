@@ -255,6 +255,7 @@ export const BracketView: React.FC<BracketViewProps> = ({
                     <MatchCard
                       key={m.id}
                       match={m}
+                      allMatches={tourMatches}
                       searchTerm={searchTerm}
                       onSelect={() => onSelectMatch(m)}
                     />
@@ -273,6 +274,7 @@ export const BracketView: React.FC<BracketViewProps> = ({
               <div className="flex-1 flex items-center justify-center">
                 <MatchCard
                   match={thirdPlaceMatch}
+                  allMatches={tourMatches}
                   searchTerm={searchTerm}
                   onSelect={() => onSelectMatch(thirdPlaceMatch)}
                   isSpecialBadge="JUARA 3"
@@ -288,20 +290,70 @@ export const BracketView: React.FC<BracketViewProps> = ({
 
 interface MatchCardProps {
   match: Match;
+  allMatches: Match[];
   searchTerm: string;
   onSelect: () => void;
   isSpecialBadge?: string;
 }
 
-const MatchCard: React.FC<MatchCardProps> = ({ match, searchTerm, onSelect, isSpecialBadge }) => {
+const MatchCard: React.FC<MatchCardProps> = ({ match, allMatches, searchTerm, onSelect, isSpecialBadge }) => {
   const isMatchCompleted = match.status === 'completed';
   const isBye = match.status === 'bye';
 
   const isT1Winner = match.winner_id && match.winner_id === match.team1_id;
   const isT2Winner = match.winner_id && match.winner_id === match.team2_id;
 
-  const isT1Highlighted = searchTerm && match.team1_name.toLowerCase().includes(searchTerm.toLowerCase());
-  const isT2Highlighted = searchTerm && match.team2_name.toLowerCase().includes(searchTerm.toLowerCase());
+  const isT1Real = match.team1_name && match.team1_name !== 'TBD' && match.team1_name.trim() !== '';
+  const isT2Real = match.team2_name && match.team2_name !== 'TBD' && match.team2_name.trim() !== '';
+
+  const isT1Highlighted = isT1Real && searchTerm && match.team1_name.toLowerCase().includes(searchTerm.toLowerCase());
+  const isT2Highlighted = isT2Real && searchTerm && match.team2_name.toLowerCase().includes(searchTerm.toLowerCase());
+
+  // Feeder matches mapping for waiting slots
+  const feeder1 = allMatches.find((m) => m.next_match_id === match.id && m.next_match_slot === 1);
+  const feeder2 = allMatches.find((m) => m.next_match_id === match.id && m.next_match_slot === 2);
+
+  // Next round target match
+  const nextMatch = match.next_match_id ? allMatches.find((m) => m.id === match.next_match_id) : undefined;
+
+  const renderTeamSlot = (isReal: boolean, teamName: string, feeder?: Match) => {
+    if (isReal) {
+      if (teamName === 'BYE') {
+        return (
+          <div className="flex items-center gap-1.5 text-slate-500 italic">
+            <span>BYE</span>
+            <span className="text-[9px] bg-slate-800 text-slate-400 px-1 py-0.2 rounded uppercase not-italic font-bold">BYE</span>
+          </div>
+        );
+      }
+      return <span className="truncate">{teamName}</span>;
+    }
+
+    if (feeder) {
+      const hasFeederTeams =
+        feeder.team1_name &&
+        feeder.team2_name &&
+        feeder.team1_name !== 'TBD' &&
+        feeder.team2_name !== 'TBD' &&
+        feeder.team1_name !== 'BYE' &&
+        feeder.team2_name !== 'BYE';
+
+      return (
+        <div className="flex items-center gap-1.5 truncate text-[11px] max-w-full">
+          <span className="text-[10px] font-bold px-1.5 py-0.5 rounded bg-amber-950/90 border border-amber-700/60 text-amber-300 shrink-0">
+            Pemenang {feeder.match_code}
+          </span>
+          {hasFeederTeams ? (
+            <span className="truncate text-[10px] text-slate-400 italic">
+              ({feeder.team1_name} vs {feeder.team2_name})
+            </span>
+          ) : null}
+        </div>
+      );
+    }
+
+    return <span className="text-slate-600 italic text-[11px]">Menunggu Tim</span>;
+  };
 
   return (
     <div
@@ -323,14 +375,14 @@ const MatchCard: React.FC<MatchCardProps> = ({ match, searchTerm, onSelect, isSp
           {match.time_slot && (
             <span
               className={`text-[9px] font-extrabold px-1.5 py-0.5 rounded border ${
-                match.time_slot === '23:00 - Selesai'
+                match.time_slot === '23:00 - Fleksibel' || match.time_slot === '23:00 - Selesai'
                   ? 'bg-rose-950 text-rose-300 border-rose-700 animate-pulse'
-                  : match.time_slot === '16:00 - 22:00'
+                  : match.time_slot === '17:30 - 22:00' || match.time_slot === '16:00 - 22:00'
                   ? 'bg-indigo-950 text-indigo-300 border-indigo-800'
                   : 'bg-amber-950 text-amber-300 border-amber-800'
               }`}
             >
-              {match.time_slot === '23:00 - Selesai' ? '⚡ 23:00 - Selesai' : match.time_slot}
+              {match.time_slot}
             </span>
           )}
         </div>
@@ -360,17 +412,16 @@ const MatchCard: React.FC<MatchCardProps> = ({ match, searchTerm, onSelect, isSp
               ? 'bg-emerald-950/80 border border-emerald-500/60 text-emerald-100 font-extrabold shadow-sm'
               : match.team1_name === 'BYE'
               ? 'bg-slate-900/40 text-slate-500 italic'
-              : 'bg-slate-900/70 text-slate-200 font-semibold'
+              : isT1Real
+              ? 'bg-slate-900/70 text-slate-200 font-semibold'
+              : 'bg-slate-900/30 text-slate-400'
           } ${isT1Highlighted ? 'ring-2 ring-amber-400 bg-amber-950/80' : ''}`}
         >
-          <div className="flex items-center gap-2 truncate pr-2">
+          <div className="flex items-center gap-2 truncate pr-2 min-w-0 flex-1">
             {isT1Winner && <Trophy className="w-3.5 h-3.5 text-amber-400 shrink-0" />}
-            <span className="truncate">{match.team1_name}</span>
-            {match.team1_name === 'BYE' && (
-              <span className="text-[9px] bg-slate-800 text-slate-400 px-1 rounded uppercase">BYE</span>
-            )}
+            {renderTeamSlot(Boolean(isT1Real), match.team1_name, feeder1)}
           </div>
-          <span className={`font-mono text-sm px-2 py-0.5 rounded font-bold ${
+          <span className={`font-mono text-sm px-2 py-0.5 rounded font-bold shrink-0 ${
             isT1Winner ? 'bg-emerald-500 text-slate-950' : 'bg-slate-800 text-slate-300'
           }`}>
             {match.team1_score !== null ? match.team1_score : '-'}
@@ -384,17 +435,16 @@ const MatchCard: React.FC<MatchCardProps> = ({ match, searchTerm, onSelect, isSp
               ? 'bg-emerald-950/80 border border-emerald-500/60 text-emerald-100 font-extrabold shadow-sm'
               : match.team2_name === 'BYE'
               ? 'bg-slate-900/40 text-slate-500 italic'
-              : 'bg-slate-900/70 text-slate-200 font-semibold'
+              : isT2Real
+              ? 'bg-slate-900/70 text-slate-200 font-semibold'
+              : 'bg-slate-900/30 text-slate-400'
           } ${isT2Highlighted ? 'ring-2 ring-amber-400 bg-amber-950/80' : ''}`}
         >
-          <div className="flex items-center gap-2 truncate pr-2">
+          <div className="flex items-center gap-2 truncate pr-2 min-w-0 flex-1">
             {isT2Winner && <Trophy className="w-3.5 h-3.5 text-amber-400 shrink-0" />}
-            <span className="truncate">{match.team2_name}</span>
-            {match.team2_name === 'BYE' && (
-              <span className="text-[9px] bg-slate-800 text-slate-400 px-1 rounded uppercase">BYE</span>
-            )}
+            {renderTeamSlot(Boolean(isT2Real), match.team2_name, feeder2)}
           </div>
-          <span className={`font-mono text-sm px-2 py-0.5 rounded font-bold ${
+          <span className={`font-mono text-sm px-2 py-0.5 rounded font-bold shrink-0 ${
             isT2Winner ? 'bg-emerald-500 text-slate-950' : 'bg-slate-800 text-slate-300'
           }`}>
             {match.team2_score !== null ? match.team2_score : '-'}
@@ -402,10 +452,21 @@ const MatchCard: React.FC<MatchCardProps> = ({ match, searchTerm, onSelect, isSp
         </div>
       </div>
 
-      {/* Footer hover hint */}
-      <div className="px-3 py-1 bg-slate-850/60 border-t border-slate-700/50 flex items-center justify-between text-[10px] text-slate-400 group-hover:text-red-300">
-        <span className="font-medium">
-          {isMatchCompleted ? '✅ Selesai' : isBye ? '⚡ Lolos Otomatis' : '⏱️ Belum Dimulai'}
+      {/* Footer hover hint & next match route info */}
+      <div className="px-3 py-1.5 bg-slate-850/80 border-t border-slate-700/50 flex items-center justify-between text-[10px] text-slate-400">
+        <span className="font-medium flex items-center gap-1">
+          {isMatchCompleted ? (
+            <span className="text-emerald-400 font-bold">✅ Selesai</span>
+          ) : isBye ? (
+            <span className="text-blue-400 font-bold">⚡ Lolos Otomatis</span>
+          ) : (
+            <span className="text-slate-400">⏱️ Belum Dimulai</span>
+          )}
+          {nextMatch && (
+            <span className="ml-1 text-[9px] text-amber-400/90 font-mono font-bold bg-amber-950/60 px-1 py-0.2 rounded border border-amber-800/40">
+              ➜ {nextMatch.match_code}
+            </span>
+          )}
         </span>
         <span className="flex items-center gap-1 font-bold text-red-400 group-hover:translate-x-0.5 transition-transform">
           Input Skor <Edit3 className="w-3 h-3" />
