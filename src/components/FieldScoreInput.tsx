@@ -100,11 +100,8 @@ export const FieldScoreInput: React.FC<FieldScoreInputProps> = ({
           className="w-full px-4 py-3 bg-slate-50 border border-slate-300 rounded-xl text-sm font-extrabold text-slate-800 focus:outline-none focus:ring-2 focus:ring-red-500"
         >
           {tourMatches.map((m) => {
-            const f1 = matches.find((x) => x.next_match_id === m.id && x.next_match_slot === 1);
-            const t1Name = m.team1_name && m.team1_name !== 'TBD' ? m.team1_name : f1 ? `Pemenang ${f1.match_code}` : 'Menunggu Tim';
-
-            const f2 = matches.find((x) => x.next_match_id === m.id && x.next_match_slot === 2);
-            const t2Name = m.team2_name && m.team2_name !== 'TBD' ? m.team2_name : f2 ? `Pemenang ${f2.match_code}` : 'Menunggu Tim';
+            const t1Name = m.team1_name && m.team1_name !== 'TBD' ? m.team1_name : '-';
+            const t2Name = m.team2_name && m.team2_name !== 'TBD' ? m.team2_name : '-';
 
             return (
               <option key={m.id} value={m.id}>

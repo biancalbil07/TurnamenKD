@@ -191,21 +191,15 @@ export const ScheduleView: React.FC<ScheduleViewProps> = ({
                       <td className="px-4 py-3">
                         <div className="flex items-center justify-center gap-3 font-semibold text-slate-800">
                           {(() => {
-                            const f1 = matches.find((x) => x.next_match_id === m.id && x.next_match_slot === 1);
                             const t1Display =
                               m.team1_name && m.team1_name !== 'TBD'
                                 ? m.team1_name
-                                : f1
-                                ? `Pemenang ${f1.match_code}`
-                                : 'Menunggu Tim';
+                                : '-';
 
-                            const f2 = matches.find((x) => x.next_match_id === m.id && x.next_match_slot === 2);
                             const t2Display =
                               m.team2_name && m.team2_name !== 'TBD'
                                 ? m.team2_name
-                                : f2
-                                ? `Pemenang ${f2.match_code}`
-                                : 'Menunggu Tim';
+                                : '-';
 
                             return (
                               <>

@@ -316,7 +316,7 @@ const MatchCard: React.FC<MatchCardProps> = ({ match, allMatches, searchTerm, on
   // Next round target match
   const nextMatch = match.next_match_id ? allMatches.find((m) => m.id === match.next_match_id) : undefined;
 
-  const renderTeamSlot = (isReal: boolean, teamName: string, feeder?: Match) => {
+  const renderTeamSlot = (isReal: boolean, teamName: string) => {
     if (isReal) {
       if (teamName === 'BYE') {
         return (
@@ -329,30 +329,7 @@ const MatchCard: React.FC<MatchCardProps> = ({ match, allMatches, searchTerm, on
       return <span className="truncate">{teamName}</span>;
     }
 
-    if (feeder) {
-      const hasFeederTeams =
-        feeder.team1_name &&
-        feeder.team2_name &&
-        feeder.team1_name !== 'TBD' &&
-        feeder.team2_name !== 'TBD' &&
-        feeder.team1_name !== 'BYE' &&
-        feeder.team2_name !== 'BYE';
-
-      return (
-        <div className="flex items-center gap-1.5 truncate text-[11px] max-w-full">
-          <span className="text-[10px] font-bold px-1.5 py-0.5 rounded bg-amber-950/90 border border-amber-700/60 text-amber-300 shrink-0">
-            Pemenang {feeder.match_code}
-          </span>
-          {hasFeederTeams ? (
-            <span className="truncate text-[10px] text-slate-400 italic">
-              ({feeder.team1_name} vs {feeder.team2_name})
-            </span>
-          ) : null}
-        </div>
-      );
-    }
-
-    return <span className="text-slate-600 italic text-[11px]">Menunggu Tim</span>;
+    return <span className="text-slate-500 font-bold text-sm tracking-widest text-center w-full block">-</span>;
   };
 
   return (
@@ -419,7 +396,7 @@ const MatchCard: React.FC<MatchCardProps> = ({ match, allMatches, searchTerm, on
         >
           <div className="flex items-center gap-2 truncate pr-2 min-w-0 flex-1">
             {isT1Winner && <Trophy className="w-3.5 h-3.5 text-amber-400 shrink-0" />}
-            {renderTeamSlot(Boolean(isT1Real), match.team1_name, feeder1)}
+            {renderTeamSlot(Boolean(isT1Real), match.team1_name)}
           </div>
           <span className={`font-mono text-sm px-2 py-0.5 rounded font-bold shrink-0 ${
             isT1Winner ? 'bg-emerald-500 text-slate-950' : 'bg-slate-800 text-slate-300'
@@ -442,7 +419,7 @@ const MatchCard: React.FC<MatchCardProps> = ({ match, allMatches, searchTerm, on
         >
           <div className="flex items-center gap-2 truncate pr-2 min-w-0 flex-1">
             {isT2Winner && <Trophy className="w-3.5 h-3.5 text-amber-400 shrink-0" />}
-            {renderTeamSlot(Boolean(isT2Real), match.team2_name, feeder2)}
+            {renderTeamSlot(Boolean(isT2Real), match.team2_name)}
           </div>
           <span className={`font-mono text-sm px-2 py-0.5 rounded font-bold shrink-0 ${
             isT2Winner ? 'bg-emerald-500 text-slate-950' : 'bg-slate-800 text-slate-300'

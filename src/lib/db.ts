@@ -9,8 +9,9 @@ const broadcastChannel = typeof window !== 'undefined' && 'BroadcastChannel' in 
   : null;
 
 const DEFAULT_TIME_SLOTS: TimeSlot[] = [
-  { id: 'slot_1', slot_label: '09:00 - 15:00', is_default: true, created_at: new Date().toISOString() },
-  { id: 'slot_2', slot_label: '16:00 - 22:00', is_default: true, created_at: new Date().toISOString() },
+  { id: 'slot_1', slot_label: '10:00 - 15:00', is_default: true, created_at: new Date().toISOString() },
+  { id: 'slot_2', slot_label: '17:30 - 22:00', is_default: true, created_at: new Date().toISOString() },
+  { id: 'slot_3', slot_label: '23:00 - Selesai', is_default: true, created_at: new Date().toISOString() },
 ];
 
 // Initial Seeds

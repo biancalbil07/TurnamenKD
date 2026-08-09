@@ -117,14 +117,24 @@ export function generateDateList(startDateStr: string, endDateStr: string): stri
 
 /**
  * Single Day Scheduler Clock for Parallel Courts & Time Slots
- * Supports morning step scheduling (10:00 - 15:00) and flexible evening slots (17:30 - 22:00 up to max 23:00)
+ * Supports:
+ * 1. Custom Siang Slot (10:00 - 15:00)
+ * 2. Custom Sore/Malam Slot (17:30 - 22:00)
+ * 3. Neutral Fallback Slot (23:00 - Selesai)
  */
 export class SingleDayClock {
   public dateStr: string;
+  private morningSlotLabel = '10:00 - 15:00';
   private morningStart = 10;
   private morningEnd = 15;
+
+  private eveningSlotLabel = '17:30 - 22:00';
   private eveningStart = 17.5; // 17:30
-  private eveningEnd = 23;    // flexible up to 23:00
+  private eveningEnd = 22;
+
+  private neutralSlotLabel = '23:00 - Selesai';
+  private neutralStart = 23;
+
   private courts = ['Lapangan A', 'Lapangan B'];
 
   private currentMorningTime = 10;
@@ -133,34 +143,43 @@ export class SingleDayClock {
   private currentEveningTime = 17.5;
   private currentEveningCourtIdx = 0;
 
+  private currentNeutralTime = 23;
+  private currentNeutralCourtIdx = 0;
+
   constructor(dateStr: string, timeSlots?: TimeSlot[]) {
     this.dateStr = dateStr;
-    if (timeSlots && timeSlots.length >= 2) {
-      const s1Match = timeSlots[0].slot_label.match(/(\d{1,2}):(\d{2})\s*-\s*(\d{1,2}):(\d{2})/);
-      const s2Match = timeSlots[1].slot_label.match(/(\d{1,2}):(\d{2})\s*-\s*(\d{1,2}):(\d{2})/);
-      if (s1Match) {
-        this.morningStart = parseInt(s1Match[1], 10) + (parseInt(s1Match[2], 10) / 60);
-        this.morningEnd = parseInt(s1Match[3], 10) + (parseInt(s1Match[4], 10) / 60);
-      }
-      if (s2Match) {
-        this.eveningStart = parseInt(s2Match[1], 10) + (parseInt(s2Match[2], 10) / 60);
-        this.eveningEnd = Math.max(23, parseInt(s2Match[3], 10) + (parseInt(s2Match[4], 10) / 60));
-      }
+    if (timeSlots && timeSlots.length > 0) {
+      const s1 = timeSlots.find((s) => s.slot_label.includes('10:00') || s.slot_label.includes('09:00') || s.slot_label.includes('Siang'));
+      const s2 = timeSlots.find((s) => s.slot_label.includes('17:30') || s.slot_label.includes('16:00') || s.slot_label.includes('Sore') || s.slot_label.includes('Malam'));
+      const s3 = timeSlots.find((s) => s.slot_label.includes('23:00') || s.slot_label.includes('Netral') || s.slot_label.includes('Selesai'));
+
+      if (s1) this.morningSlotLabel = s1.slot_label;
+      if (s2) this.eveningSlotLabel = s2.slot_label;
+      if (s3) this.neutralSlotLabel = s3.slot_label;
     }
-    this.currentMorningTime = this.morningStart;
-    this.currentEveningTime = this.eveningStart;
   }
 
   allocateSlot(preferEvening = false): { date: string; time: string; time_slot: string; venue: string } {
-    let isEvening = preferEvening;
+    let mode: 'morning' | 'evening' | 'neutral' = 'morning';
 
-    if (!isEvening && this.currentMorningTime >= this.morningEnd) {
-      isEvening = true;
-    }
+    const morningAvail = this.currentMorningTime < this.morningEnd;
+    const eveningAvail = this.currentEveningTime < this.eveningEnd;
 
-    if (isEvening && this.currentEveningTime >= this.eveningEnd) {
-      if (this.currentMorningTime < this.morningEnd) {
-        isEvening = false;
+    if (preferEvening) {
+      if (eveningAvail) {
+        mode = 'evening';
+      } else if (morningAvail) {
+        mode = 'morning';
+      } else {
+        mode = 'neutral';
+      }
+    } else {
+      if (morningAvail) {
+        mode = 'morning';
+      } else if (eveningAvail) {
+        mode = 'evening';
+      } else {
+        mode = 'neutral';
       }
     }
 
@@ -168,30 +187,41 @@ export class SingleDayClock {
     let courtIdx: number;
     let slotLabel: string;
 
-    if (!isEvening) {
+    if (mode === 'morning') {
       decimalTime = Math.min(this.currentMorningTime, this.morningEnd - 0.5);
       courtIdx = this.currentMorningCourtIdx;
-      slotLabel = '10:00 - 15:00';
+      slotLabel = this.morningSlotLabel;
 
       this.currentMorningCourtIdx++;
       if (this.currentMorningCourtIdx >= this.courts.length) {
         this.currentMorningCourtIdx = 0;
-        this.currentMorningTime += 1; // 1-hour step for next round of court matches
+        this.currentMorningTime += 1; // 1-hour step for next parallel court round
       }
-    } else {
+    } else if (mode === 'evening') {
       decimalTime = Math.min(this.currentEveningTime, this.eveningEnd - 0.5);
       courtIdx = this.currentEveningCourtIdx;
-      slotLabel = decimalTime >= 22 ? '23:00 - Fleksibel' : '17:30 - 22:00';
+      slotLabel = this.eveningSlotLabel;
 
       this.currentEveningCourtIdx++;
       if (this.currentEveningCourtIdx >= this.courts.length) {
         this.currentEveningCourtIdx = 0;
-        this.currentEveningTime += 1; // 1-hour step for evening slot
+        this.currentEveningTime += 1; // 1-hour step for evening
+      }
+    } else {
+      // Neutral Fallback Slot (23:00 - Selesai)
+      decimalTime = Math.min(this.currentNeutralTime, 24);
+      courtIdx = this.currentNeutralCourtIdx;
+      slotLabel = this.neutralSlotLabel;
+
+      this.currentNeutralCourtIdx++;
+      if (this.currentNeutralCourtIdx >= this.courts.length) {
+        this.currentNeutralCourtIdx = 0;
+        this.currentNeutralTime += 0.5; // 30-min step
       }
     }
 
-    const h = Math.floor(decimalTime);
-    const m = Math.round((decimalTime - h) * 60);
+    const h = Math.floor(decimalTime) % 24;
+    const m = Math.round((decimalTime - Math.floor(decimalTime)) * 60);
     const timeStr = `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}`;
     const venue = this.courts[courtIdx % this.courts.length];
 
