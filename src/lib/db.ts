@@ -141,6 +141,32 @@ export async function initDatabase() {
     saveToLocalStorage();
   }
 
+  // Auto-migrate old schedule if all matches were mistakenly clustered on 16 Aug
+  const activeTournament = appData.tournaments.find((t) => t.id === appData.activeTournamentId) || appData.tournaments[0];
+  if (activeTournament) {
+    const tourMatches = appData.matches.filter((m) => m.tournament_id === activeTournament.id);
+    const nonFinalMatches = tourMatches.filter((m) => !m.is_third_place && m.round_name !== 'Final');
+    const allOnAug16 = nonFinalMatches.length > 0 && nonFinalMatches.every((m) => m.date === '2026-08-16');
+    const noScoresYet = tourMatches.every((m) => m.team1_score === null && m.team2_score === null);
+
+    if (allOnAug16 && noScoresYet) {
+      const tourTeams = appData.teams.filter((t) => t.tournament_id === activeTournament.id);
+      if (tourTeams.length > 0) {
+        const regenerated = generateKnockoutMatches(
+          activeTournament.id,
+          tourTeams,
+          activeTournament.third_place_match ?? true,
+          false,
+          appData.timeSlots,
+          activeTournament.start_date || '2026-08-10',
+          activeTournament.end_date || '2026-08-16'
+        );
+        appData.matches = appData.matches.filter((m) => m.tournament_id !== activeTournament.id).concat(regenerated);
+        saveToLocalStorage();
+      }
+    }
+  }
+
   // Try sync with Supabase if configured
   const supabase = getSupabaseClient();
   if (supabase) {

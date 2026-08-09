@@ -92,20 +92,48 @@ function getFeederOrder(length: number): number[] {
 }
 
 /**
- * Robust Multi-Day Date & Time Schedule Clock using JS Date objects
+ * Generates array of YYYY-MM-DD strings between startDate and endDate
  */
-class ScheduleClock {
-  private currentDate: Date;
-  private endDate: Date;
-  private courts = ['Lapangan A', 'Lapangan B'];
-  private currentCourtIndex = 0;
+export function generateDateList(startDateStr: string, endDateStr: string): string[] {
+  const start = new Date(startDateStr);
+  const end = new Date(endDateStr);
+
+  if (isNaN(start.getTime()) || isNaN(end.getTime()) || start > end) {
+    return [startDateStr || '2026-08-10'];
+  }
+
+  const dates: string[] = [];
+  const curr = new Date(start);
+  while (curr <= end) {
+    const y = curr.getFullYear();
+    const m = String(curr.getMonth() + 1).padStart(2, '0');
+    const d = String(curr.getDate()).padStart(2, '0');
+    dates.push(`${y}-${m}-${d}`);
+    curr.setDate(curr.getDate() + 1);
+  }
+
+  return dates;
+}
+
+/**
+ * Single Day Scheduler Clock for Parallel Courts & Time Slots
+ */
+export class SingleDayClock {
+  public dateStr: string;
   private morningStart = 9;
   private morningEnd = 15;
   private eveningStart = 16;
   private eveningEnd = 22;
+  private courts = ['Lapangan A', 'Lapangan B'];
 
-  constructor(startDateStr = '2026-08-10', endDateStr = '2026-08-16', timeSlots?: TimeSlot[]) {
-    // Parse custom time slots if available
+  private currentMorningHour = 9;
+  private currentMorningCourtIdx = 0;
+
+  private currentEveningHour = 16;
+  private currentEveningCourtIdx = 0;
+
+  constructor(dateStr: string, timeSlots?: TimeSlot[]) {
+    this.dateStr = dateStr;
     if (timeSlots && timeSlots.length >= 2) {
       const s1Match = timeSlots[0].slot_label.match(/(\d{1,2}):\d{2}\s*-\s*(\d{1,2}):\d{2}/);
       const s2Match = timeSlots[1].slot_label.match(/(\d{1,2}):\d{2}\s*-\s*(\d{1,2}):\d{2}/);
@@ -118,92 +146,58 @@ class ScheduleClock {
         this.eveningEnd = parseInt(s2Match[2], 10);
       }
     }
-
-    const startParts = startDateStr.split('-').map(Number);
-    if (startParts.length === 3) {
-      this.currentDate = new Date(startParts[0], startParts[1] - 1, startParts[2], this.morningStart, 0, 0);
-    } else {
-      this.currentDate = new Date(2026, 7, 10, this.morningStart, 0, 0);
-    }
-
-    const endParts = endDateStr.split('-').map(Number);
-    if (endParts.length === 3) {
-      this.endDate = new Date(endParts[0], endParts[1] - 1, endParts[2], this.eveningEnd, 0, 0);
-    } else {
-      this.endDate = new Date(2026, 7, 16, this.eveningEnd, 0, 0);
-    }
+    this.currentMorningHour = this.morningStart;
+    this.currentEveningHour = this.eveningStart;
   }
 
-  getSlotLabel(): string {
-    const h = this.currentDate.getHours();
-    if (h >= this.morningStart && h < this.morningEnd) {
-      return `${String(this.morningStart).padStart(2, '0')}:00 - ${String(this.morningEnd).padStart(2, '0')}:00`;
-    }
-    return `${String(this.eveningStart).padStart(2, '0')}:00 - ${String(this.eveningEnd).padStart(2, '0')}:00`;
-  }
+  allocateSlot(preferEvening = false): { date: string; time: string; time_slot: string; venue: string } {
+    let isEvening = preferEvening;
 
-  getTimeString(): string {
-    const h = String(this.currentDate.getHours()).padStart(2, '0');
-    const m = String(this.currentDate.getMinutes()).padStart(2, '0');
-    return `${h}:${m}`;
-  }
-
-  getDateISO(): string {
-    const y = this.currentDate.getFullYear();
-    const m = String(this.currentDate.getMonth() + 1).padStart(2, '0');
-    const d = String(this.currentDate.getDate()).padStart(2, '0');
-    return `${y}-${m}-${d}`;
-  }
-
-  allocateSlot(requestedSlot?: string): { date: string; time: string; time_slot: string; venue: string } {
-    let hour = this.currentDate.getHours();
-
-    if (hour >= this.morningEnd && hour < this.eveningStart) {
-      this.currentDate.setHours(this.eveningStart, 0, 0, 0);
-      this.currentCourtIndex = 0;
-    }
-    if (this.currentDate.getHours() >= this.eveningEnd) {
-      this.currentDate.setDate(this.currentDate.getDate() + 1);
-      this.currentDate.setHours(this.morningStart, 0, 0, 0);
-      this.currentCourtIndex = 0;
+    if (!isEvening && this.currentMorningHour >= this.morningEnd) {
+      isEvening = true;
     }
 
-    if (this.currentDate > this.endDate) {
-      this.currentDate = new Date(this.endDate);
-      this.currentDate.setHours(this.morningStart, 0, 0, 0);
-    }
-
-    if (requestedSlot && requestedSlot.includes(`${this.eveningStart}:00`) && this.currentDate.getHours() < this.eveningStart) {
-      this.currentDate.setHours(this.eveningStart, 0, 0, 0);
-      this.currentCourtIndex = 0;
-    }
-
-    const date = this.getDateISO();
-    const time = this.getTimeString();
-    const time_slot = this.getSlotLabel();
-    const venue = this.courts[this.currentCourtIndex];
-
-    // Multi-court parallel increment
-    this.currentCourtIndex++;
-    if (this.currentCourtIndex >= this.courts.length) {
-      this.currentCourtIndex = 0;
-      this.currentDate.setHours(this.currentDate.getHours() + 1);
-
-      hour = this.currentDate.getHours();
-      if (hour >= this.morningEnd && hour < this.eveningStart) {
-        this.currentDate.setHours(this.eveningStart, 0, 0, 0);
-      } else if (hour >= this.eveningEnd) {
-        this.currentDate.setDate(this.currentDate.getDate() + 1);
-        this.currentDate.setHours(this.morningStart, 0, 0, 0);
-      }
-
-      if (this.currentDate > this.endDate) {
-        this.currentDate = new Date(this.endDate);
-        this.currentDate.setHours(this.eveningStart, 0, 0, 0);
+    if (isEvening && this.currentEveningHour >= this.eveningEnd) {
+      if (this.currentMorningHour < this.morningEnd) {
+        isEvening = false;
       }
     }
 
-    return { date, time, time_slot, venue };
+    let hour: number;
+    let courtIdx: number;
+    let slotLabel: string;
+
+    if (!isEvening) {
+      hour = Math.min(this.currentMorningHour, this.morningEnd - 1);
+      courtIdx = this.currentMorningCourtIdx;
+      slotLabel = `${String(this.morningStart).padStart(2, '0')}:00 - ${String(this.morningEnd).padStart(2, '0')}:00`;
+
+      this.currentMorningCourtIdx++;
+      if (this.currentMorningCourtIdx >= this.courts.length) {
+        this.currentMorningCourtIdx = 0;
+        this.currentMorningHour++;
+      }
+    } else {
+      hour = Math.min(this.currentEveningHour, this.eveningEnd - 1);
+      courtIdx = this.currentEveningCourtIdx;
+      slotLabel = `${String(this.eveningStart).padStart(2, '0')}:00 - ${String(this.eveningEnd).padStart(2, '0')}:00`;
+
+      this.currentEveningCourtIdx++;
+      if (this.currentEveningCourtIdx >= this.courts.length) {
+        this.currentEveningCourtIdx = 0;
+        this.currentEveningHour++;
+      }
+    }
+
+    const timeStr = `${String(hour).padStart(2, '0')}:00`;
+    const venue = this.courts[courtIdx % this.courts.length];
+
+    return {
+      date: this.dateStr,
+      time: timeStr,
+      time_slot: slotLabel,
+      venue: venue,
+    };
   }
 }
 
@@ -368,14 +362,35 @@ export function generateKnockoutMatches(
     }
   }
 
-  // Multi-Day Automatic Time & Date Allocation (Clock Engine)
-  const clock = new ScheduleClock(startDateStr, endDateStr, timeSlots);
+  // Multi-Day Automatic Time & Date Allocation (Round-by-Round Sequential & Parallel)
+  const allDates = generateDateList(startDateStr, endDateStr);
+  const finalDate = allDates.length > 0 ? allDates[allDates.length - 1] : endDateStr;
+  const preFinalDates = allDates.length > 1 ? allDates.slice(0, allDates.length - 1) : [startDateStr];
 
-  // Allocate dates/times round by round for early rounds
-  for (let r = 0; r < totalRounds - 1; r++) {
+  const numPreFinalRounds = Math.max(1, totalRounds - 1);
+  const numPreFinalDates = preFinalDates.length;
+
+  for (let r = 0; r < numPreFinalRounds; r++) {
     const roundMatches = matchesByRound[r];
-    roundMatches.forEach((m) => {
-      const slotAlloc = clock.allocateSlot(m.time_slot);
+    if (!roundMatches || roundMatches.length === 0) continue;
+
+    const startDIdx = Math.floor((r / numPreFinalRounds) * numPreFinalDates);
+    let endDIdx = Math.floor(((r + 1) / numPreFinalRounds) * numPreFinalDates) - 1;
+    if (endDIdx < startDIdx) endDIdx = startDIdx;
+
+    const roundDates = preFinalDates.slice(startDIdx, endDIdx + 1);
+    const dayClocks = roundDates.map((dStr) => new SingleDayClock(dStr, timeSlots));
+
+    const numMatches = roundMatches.length;
+    const numDays = roundDates.length;
+
+    roundMatches.forEach((m, mIdx) => {
+      const dayIdx = Math.min(numDays - 1, Math.floor((mIdx / numMatches) * numDays));
+      const clock = dayClocks[dayIdx] || dayClocks[0];
+
+      const preferEvening = m.time_slot ? m.time_slot.includes('16:00') : false;
+      const slotAlloc = clock.allocateSlot(preferEvening);
+
       m.date = slotAlloc.date;
       m.time = slotAlloc.time;
       m.time_slot = slotAlloc.time_slot;
@@ -383,10 +398,10 @@ export function generateKnockoutMatches(
     });
   }
 
-  // Locked Final Day (endDateStr - e.g. 16 Agustus) for FINAL and 3rd Place Match
+  // Locked Final Day (finalDate - e.g. 16 Agustus) for FINAL and 3rd Place Match
   const finalMatch = matchesByRound[totalRounds - 1][0];
   if (finalMatch) {
-    finalMatch.date = endDateStr;
+    finalMatch.date = finalDate;
     finalMatch.time = '19:00';
     finalMatch.time_slot = '16:00 - 22:00';
     finalMatch.venue = 'Lapangan Utama';
@@ -411,7 +426,7 @@ export function generateKnockoutMatches(
       next_match_slot: null,
       status: 'scheduled',
       venue: 'Lapangan Utama',
-      date: endDateStr, // Locked to peak final day
+      date: finalDate, // Locked to peak final day
       time: '16:00',
       time_slot: '16:00 - 22:00',
       updated_at: now,
