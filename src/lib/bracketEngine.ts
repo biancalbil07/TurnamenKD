@@ -101,8 +101,8 @@ export function seedTeamsByTimeSlot(
       const eR1Count = eveningTeams.length - eb;
 
       let score = 0;
-      if (mR1Count % 2 === 0) score += 2;
-      if (eR1Count % 2 === 0) score += 2;
+      if (mR1Count % 2 === 0) score += 100;
+      if (eR1Count % 2 === 0) score += 100;
 
       score -= Math.abs(mb - eb) * 0.1;
 
@@ -123,8 +123,18 @@ export function seedTeamsByTimeSlot(
   const eveningBYETeams = eveningTeams.slice(0, eByes);
   const eveningR1Teams = eveningTeams.slice(eByes);
 
-  const byeTeams = [...morningBYETeams, ...eveningBYETeams];
-  const r1Teams = [...morningR1Teams, ...eveningR1Teams];
+  // Dynamic Session Priority: The smaller session gets priority to complete its internal rounds first
+  let r1Teams: Team[];
+  let byeTeams: Team[];
+
+  if (morningTeams.length <= eveningTeams.length) {
+    byeTeams = [...morningBYETeams, ...eveningBYETeams];
+    r1Teams = [...morningR1Teams, ...eveningR1Teams];
+  } else {
+    byeTeams = [...eveningBYETeams, ...morningBYETeams];
+    r1Teams = [...eveningR1Teams, ...morningR1Teams];
+  }
+
   const orderedTeams = [...byeTeams, ...r1Teams];
 
   return { orderedTeams, byeTeams, r1Teams };
@@ -172,38 +182,34 @@ export function generateDateList(startDateStr: string, endDateStr: string): stri
 }
 
 /**
- * Single Day Scheduler Clock for Parallel Courts & Time Slots
- * Supports:
- * 1. Custom Siang Slot (10:00 - 15:00)
- * 2. Custom Sore/Malam Slot (17:30 - 22:00)
- * 3. Neutral Fallback Slot (23:00 - Selesai)
+ * Multi-Day Scheduler Clock with Strict Session Isolation & Day Overflow
+ * 1. Morning Slot (10:00 - 15:00) -> Strict Morning Isolation (Overflows to Next Day Morning if full)
+ * 2. Evening Slot (17:30 - 22:00) -> Strict Evening Isolation (Overflows to Next Day Evening if full)
+ * 3. Flexible Cross-Session Slot (23:00 - Selesai) -> Automated Neutral Slot for Pagi vs Sore matches
  */
-export class SingleDayClock {
-  public dateStr: string;
+export class MultiDaySchedulerClock {
+  private dates: string[];
   private morningSlotLabel = '10:00 - 15:00';
-  private morningStart = 10;
-  private morningEnd = 15;
-
   private eveningSlotLabel = '17:30 - 22:00';
-  private eveningStart = 17.5; // 17:30
-  private eveningEnd = 22;
-
   private neutralSlotLabel = '23:00 - Selesai';
-  private neutralStart = 23;
 
   private courts = ['Lapangan A', 'Lapangan B'];
 
-  private currentMorningTime = 10;
-  private currentMorningCourtIdx = 0;
+  private dateStates: Map<
+    string,
+    {
+      mTime: number;
+      mCourtIdx: number;
+      eTime: number;
+      eCourtIdx: number;
+      nTime: number;
+      nCourtIdx: number;
+    }
+  > = new Map();
 
-  private currentEveningTime = 17.5;
-  private currentEveningCourtIdx = 0;
+  constructor(dates: string[], timeSlots?: TimeSlot[]) {
+    this.dates = dates.length > 0 ? dates : ['2026-08-10'];
 
-  private currentNeutralTime = 23;
-  private currentNeutralCourtIdx = 0;
-
-  constructor(dateStr: string, timeSlots?: TimeSlot[]) {
-    this.dateStr = dateStr;
     if (timeSlots && timeSlots.length > 0) {
       const s1 = timeSlots.find((s) => s.slot_label.includes('10:00') || s.slot_label.includes('09:00') || s.slot_label.includes('Siang'));
       const s2 = timeSlots.find((s) => s.slot_label.includes('17:30') || s.slot_label.includes('16:00') || s.slot_label.includes('Sore') || s.slot_label.includes('Malam'));
@@ -213,80 +219,144 @@ export class SingleDayClock {
       if (s2) this.eveningSlotLabel = s2.slot_label;
       if (s3) this.neutralSlotLabel = s3.slot_label;
     }
+
+    this.dates.forEach((dStr) => {
+      this.dateStates.set(dStr, {
+        mTime: 10,
+        mCourtIdx: 0,
+        eTime: 17.5,
+        eCourtIdx: 0,
+        nTime: 23,
+        nCourtIdx: 0,
+      });
+    });
   }
 
-  allocateSlot(preferEvening = false): { date: string; time: string; time_slot: string; venue: string } {
-    let mode: 'morning' | 'evening' | 'neutral' = 'morning';
-
-    const morningAvail = this.currentMorningTime < this.morningEnd;
-    const eveningAvail = this.currentEveningTime < this.eveningEnd;
-
-    if (preferEvening) {
-      if (eveningAvail) {
-        mode = 'evening';
-      } else if (morningAvail) {
-        mode = 'morning';
-      } else {
-        mode = 'neutral';
-      }
-    } else {
-      if (morningAvail) {
-        mode = 'morning';
-      } else if (eveningAvail) {
-        mode = 'evening';
-      } else {
-        mode = 'neutral';
-      }
+  private getState(dStr: string) {
+    if (!this.dateStates.has(dStr)) {
+      this.dateStates.set(dStr, {
+        mTime: 10,
+        mCourtIdx: 0,
+        eTime: 17.5,
+        eCourtIdx: 0,
+        nTime: 23,
+        nCourtIdx: 0,
+      });
     }
+    return this.dateStates.get(dStr)!;
+  }
 
-    let decimalTime: number;
-    let courtIdx: number;
-    let slotLabel: string;
+  allocateMatch(
+    slotType: '10:00 - 15:00' | '17:30 - 22:00' | '23:00 - Selesai',
+    preferredDateIdx = 0
+  ): { date: string; time: string; time_slot: string; venue: string } {
+    let startDIdx = Math.min(preferredDateIdx, this.dates.length - 1);
+    if (startDIdx < 0) startDIdx = 0;
 
-    if (mode === 'morning') {
-      decimalTime = Math.min(this.currentMorningTime, this.morningEnd - 0.5);
-      courtIdx = this.currentMorningCourtIdx;
-      slotLabel = this.morningSlotLabel;
+    if (slotType === '10:00 - 15:00') {
+      // Find day with morning time < 15.0 starting from startDIdx (Morning Day Overflow)
+      let dIdx = startDIdx;
+      while (dIdx < this.dates.length) {
+        const dStr = this.dates[dIdx];
+        const state = this.getState(dStr);
+        if (state.mTime < 15.0) {
+          const decimalTime = Math.min(state.mTime, 14.5);
+          const courtIdx = state.mCourtIdx;
+          const venue = this.courts[courtIdx % this.courts.length];
 
-      this.currentMorningCourtIdx++;
-      if (this.currentMorningCourtIdx >= this.courts.length) {
-        this.currentMorningCourtIdx = 0;
-        this.currentMorningTime += 1; // 1-hour step for next parallel court round
+          state.mCourtIdx++;
+          if (state.mCourtIdx >= this.courts.length) {
+            state.mCourtIdx = 0;
+            state.mTime += 0.5; // 30-min step for parallel courts
+          }
+
+          const h = Math.floor(decimalTime) % 24;
+          const m = Math.round((decimalTime - Math.floor(decimalTime)) * 60);
+          const timeStr = `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}`;
+
+          return { date: dStr, time: timeStr, time_slot: this.morningSlotLabel, venue };
+        }
+        dIdx++;
       }
-    } else if (mode === 'evening') {
-      decimalTime = Math.min(this.currentEveningTime, this.eveningEnd - 0.5);
-      courtIdx = this.currentEveningCourtIdx;
-      slotLabel = this.eveningSlotLabel;
+      // Fallback overflow to last day
+      const lastDStr = this.dates[this.dates.length - 1];
+      const state = this.getState(lastDStr);
+      const courtIdx = state.mCourtIdx;
+      const venue = this.courts[courtIdx % this.courts.length];
 
-      this.currentEveningCourtIdx++;
-      if (this.currentEveningCourtIdx >= this.courts.length) {
-        this.currentEveningCourtIdx = 0;
-        this.currentEveningTime += 1; // 1-hour step for evening
+      const h = Math.floor(state.mTime) % 24;
+      const m = Math.round((state.mTime - Math.floor(state.mTime)) * 60);
+      const timeStr = `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}`;
+
+      state.mCourtIdx++;
+      if (state.mCourtIdx >= this.courts.length) {
+        state.mCourtIdx = 0;
+        state.mTime += 0.5;
       }
+      return { date: lastDStr, time: timeStr, time_slot: this.morningSlotLabel, venue };
+    } else if (slotType === '17:30 - 22:00') {
+      // Find day with evening time < 22.0 starting from startDIdx (Evening Day Overflow)
+      let dIdx = startDIdx;
+      while (dIdx < this.dates.length) {
+        const dStr = this.dates[dIdx];
+        const state = this.getState(dStr);
+        if (state.eTime < 22.0) {
+          const decimalTime = Math.min(state.eTime, 21.5);
+          const courtIdx = state.eCourtIdx;
+          const venue = this.courts[courtIdx % this.courts.length];
+
+          state.eCourtIdx++;
+          if (state.eCourtIdx >= this.courts.length) {
+            state.eCourtIdx = 0;
+            state.eTime += 0.5;
+          }
+
+          const h = Math.floor(decimalTime) % 24;
+          const m = Math.round((decimalTime - Math.floor(decimalTime)) * 60);
+          const timeStr = `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}`;
+
+          return { date: dStr, time: timeStr, time_slot: this.eveningSlotLabel, venue };
+        }
+        dIdx++;
+      }
+      // Fallback overflow to last day
+      const lastDStr = this.dates[this.dates.length - 1];
+      const state = this.getState(lastDStr);
+      const courtIdx = state.eCourtIdx;
+      const venue = this.courts[courtIdx % this.courts.length];
+
+      const h = Math.floor(state.eTime) % 24;
+      const m = Math.round((state.eTime - Math.floor(state.eTime)) * 60);
+      const timeStr = `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}`;
+
+      state.eCourtIdx++;
+      if (state.eCourtIdx >= this.courts.length) {
+        state.eCourtIdx = 0;
+        state.eTime += 0.5;
+      }
+      return { date: lastDStr, time: timeStr, time_slot: this.eveningSlotLabel, venue };
     } else {
-      // Neutral Fallback Slot (23:00 - Selesai)
-      decimalTime = Math.min(this.currentNeutralTime, 24);
-      courtIdx = this.currentNeutralCourtIdx;
-      slotLabel = this.neutralSlotLabel;
+      // Cross-Session Flexible Slot (23:00 - Selesai)
+      let dIdx = startDIdx;
+      const dStr = this.dates[Math.min(dIdx, this.dates.length - 1)];
+      const state = this.getState(dStr);
 
-      this.currentNeutralCourtIdx++;
-      if (this.currentNeutralCourtIdx >= this.courts.length) {
-        this.currentNeutralCourtIdx = 0;
-        this.currentNeutralTime += 0.5; // 30-min step
+      const decimalTime = Math.min(state.nTime, 24);
+      const courtIdx = state.nCourtIdx;
+      const venue = this.courts[courtIdx % this.courts.length];
+
+      state.nCourtIdx++;
+      if (state.nCourtIdx >= this.courts.length) {
+        state.nCourtIdx = 0;
+        state.nTime += 0.5;
       }
+
+      const h = Math.floor(decimalTime) % 24;
+      const m = Math.round((decimalTime - Math.floor(decimalTime)) * 60);
+      const timeStr = `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}`;
+
+      return { date: dStr, time: timeStr, time_slot: this.neutralSlotLabel, venue };
     }
-
-    const h = Math.floor(decimalTime) % 24;
-    const m = Math.round((decimalTime - Math.floor(decimalTime)) * 60);
-    const timeStr = `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}`;
-    const venue = this.courts[courtIdx % this.courts.length];
-
-    return {
-      date: this.dateStr,
-      time: timeStr,
-      time_slot: slotLabel,
-      venue: venue,
-    };
   }
 }
 
@@ -517,10 +587,12 @@ export function generateKnockoutMatches(
     });
   }
 
-  // Multi-Day Automatic Time & Date Allocation (Round-by-Round Sequential & Parallel)
+  // Multi-Day Automatic Time & Date Allocation with Strict Session Isolation
   const allDates = generateDateList(startDateStr, endDateStr);
   const finalDate = allDates.length > 0 ? allDates[allDates.length - 1] : endDateStr;
   const preFinalDates = allDates.length > 1 ? allDates.slice(0, allDates.length - 1) : [startDateStr];
+
+  const multiDayClock = new MultiDaySchedulerClock(preFinalDates, timeSlots);
 
   const numPreFinalRounds = Math.max(1, totalRounds - 1);
   const numPreFinalDates = preFinalDates.length;
@@ -530,21 +602,18 @@ export function generateKnockoutMatches(
     if (!roundMatches || roundMatches.length === 0) continue;
 
     const startDIdx = Math.floor((r / numPreFinalRounds) * numPreFinalDates);
-    let endDIdx = Math.floor(((r + 1) / numPreFinalRounds) * numPreFinalDates) - 1;
-    if (endDIdx < startDIdx) endDIdx = startDIdx;
 
-    const roundDates = preFinalDates.slice(startDIdx, endDIdx + 1);
-    const dayClocks = roundDates.map((dStr) => new SingleDayClock(dStr, timeSlots));
+    roundMatches.forEach((m) => {
+      let slotType: '10:00 - 15:00' | '17:30 - 22:00' | '23:00 - Selesai' = '10:00 - 15:00';
+      if (m.time_slot === '17:30 - 22:00') {
+        slotType = '17:30 - 22:00';
+      } else if (m.time_slot === '23:00 - Selesai') {
+        slotType = '23:00 - Selesai';
+      } else {
+        slotType = '10:00 - 15:00';
+      }
 
-    const numMatches = roundMatches.length;
-    const numDays = roundDates.length;
-
-    roundMatches.forEach((m, mIdx) => {
-      const dayIdx = Math.min(numDays - 1, Math.floor((mIdx / numMatches) * numDays));
-      const clock = dayClocks[dayIdx] || dayClocks[0];
-
-      const preferEvening = m.time_slot ? !isMorningSlot(m.time_slot) : false;
-      const slotAlloc = clock.allocateSlot(preferEvening);
+      const slotAlloc = multiDayClock.allocateMatch(slotType, startDIdx);
 
       m.date = slotAlloc.date;
       m.time = slotAlloc.time;
