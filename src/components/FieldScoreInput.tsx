@@ -33,6 +33,13 @@ export const FieldScoreInput: React.FC<FieldScoreInputProps> = ({
   const [notifyTelegram, setNotifyTelegram] = useState(true);
   const [isSavedNotice, setIsSavedNotice] = useState(false);
 
+  React.useEffect(() => {
+    if (selectedMatch) {
+      setT1Score(selectedMatch.team1_score ?? 0);
+      setT2Score(selectedMatch.team2_score ?? 0);
+    }
+  }, [selectedMatchId, selectedMatch?.team1_score, selectedMatch?.team2_score]);
+
   const handleSelectMatch = (m: Match) => {
     setSelectedMatchId(m.id);
     setT1Score(m.team1_score ?? 0);

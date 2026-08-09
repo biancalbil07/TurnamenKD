@@ -1,5 +1,5 @@
 import { AuditLog, Match, PanitiaMember, Team, TimeSlot, Tournament } from '../types';
-import { generateKnockoutMatches } from './bracketEngine';
+import { generateKnockoutMatches, applyAutoProgression } from './bracketEngine';
 import { getSupabaseClient } from './supabase';
 import { syncTelegramSettingsFromSupabase } from './telegram';
 
@@ -292,24 +292,88 @@ export async function syncFromSupabase() {
 
 let realtimeChannelSubscription: any = null;
 
-function subscribeSupabaseRealtime() {
+export function cleanupSupabaseRealtime() {
   const supabase = getSupabaseClient();
-  if (!supabase || realtimeChannelSubscription) return;
+  if (supabase && realtimeChannelSubscription) {
+    try {
+      supabase.removeChannel(realtimeChannelSubscription);
+    } catch (err) {
+      console.warn('Error removing Supabase Realtime channel:', err);
+    }
+    realtimeChannelSubscription = null;
+    realtimeConnectionState = 'DISCONNECTED';
+    notifyListeners();
+  }
+}
+
+/**
+ * Handles Realtime postgres_changes specifically for the `matches` table.
+ * Instant state updates for UPDATE, INSERT, DELETE + Auto-Advance Winners to next round.
+ */
+export function handleRealtimeMatchPayload(payload: any) {
+  const { eventType, new: newRow, old: oldRow } = payload;
+  console.log(`⚡ [SUPABASE REALTIME MATCHES EVENT] ${eventType}`, newRow || oldRow);
+
+  if (eventType === 'UPDATE' && newRow) {
+    const idx = appData.matches.findIndex((m) => m.id === newRow.id);
+    if (idx !== -1) {
+      appData.matches[idx] = { ...appData.matches[idx], ...newRow };
+    } else {
+      appData.matches.push(newRow as Match);
+    }
+  } else if (eventType === 'INSERT' && newRow) {
+    const idx = appData.matches.findIndex((m) => m.id === newRow.id);
+    if (idx !== -1) {
+      appData.matches[idx] = { ...appData.matches[idx], ...newRow };
+    } else {
+      appData.matches.push(newRow as Match);
+    }
+  } else if (eventType === 'DELETE' && oldRow) {
+    appData.matches = appData.matches.filter((m) => m.id !== oldRow.id);
+  }
+
+  // Auto-Advance Winner & update Babak 2 / downstream matches instantly
+  appData.matches = applyAutoProgression(appData.matches);
+
+  saveToLocalStorage();
+  notifyListeners();
+}
+
+export function subscribeSupabaseRealtime() {
+  const supabase = getSupabaseClient();
+  if (!supabase) return;
+
+  if (realtimeChannelSubscription) {
+    try {
+      supabase.removeChannel(realtimeChannelSubscription);
+    } catch {
+      // ignore
+    }
+    realtimeChannelSubscription = null;
+  }
 
   realtimeConnectionState = 'CONNECTING';
   notifyListeners();
 
-  realtimeChannelSubscription = supabase
-    .channel('public:realtime-turnamen-channel')
+  const channel = supabase.channel('realtime-matches');
+
+  channel
+    .on('postgres_changes', { event: '*', schema: 'public', table: 'matches' }, (payload) => {
+      handleRealtimeMatchPayload(payload);
+    })
     .on('postgres_changes', { event: '*', schema: 'public' }, (payload) => {
-      console.log('⚡ [SUPABASE REALTIME EVENT]', payload.table, payload.eventType);
-      syncFromSupabase();
+      if (payload.table !== 'matches') {
+        console.log('⚡ [SUPABASE REALTIME OTHER TABLE EVENT]', payload.table, payload.eventType);
+        syncFromSupabase();
+      }
     })
     .subscribe((status) => {
       console.log('⚡ [SUPABASE REALTIME CHANNEL STATUS]', status);
       realtimeConnectionState = status;
       notifyListeners();
     });
+
+  realtimeChannelSubscription = channel;
 }
 
 /**

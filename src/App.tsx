@@ -21,6 +21,7 @@ import {
   setActiveTournamentId,
   deleteTournament,
   subscribeDataChanges,
+  cleanupSupabaseRealtime,
 } from './lib/db';
 import { getSupabaseClient } from './lib/supabase';
 
@@ -127,6 +128,7 @@ export default function App() {
       isMounted = false;
       if (authListener) authListener.unsubscribe();
       unsubscribeDb();
+      cleanupSupabaseRealtime();
     };
   }, []);
 
