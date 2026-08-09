@@ -455,6 +455,68 @@ export function generateKnockoutMatches(
     }
   }
 
+  // Compute dynamic session time_slots for all rounds:
+  // - Pure Morning vs Morning -> '10:00 - 15:00'
+  // - Pure Evening vs Evening -> '17:30 - 22:00'
+  // - Cross-Session / Mixed -> '23:00 - Selesai'
+  const teamMap = new Map<string, Team>(teams.map((t) => [t.id, t]));
+
+  for (let r = 0; r < totalRounds; r++) {
+    const currentRoundMatches = matchesByRound[r];
+
+    currentRoundMatches.forEach((match) => {
+      if (r === 0) {
+        const t1 = match.team1_id ? teamMap.get(match.team1_id) : null;
+        const t2 = match.team2_id ? teamMap.get(match.team2_id) : null;
+
+        const isM1 = t1 ? isMorningSlot(t1.time_slot) : true;
+        const isM2 = t2 ? isMorningSlot(t2.time_slot) : true;
+
+        if (isM1 && isM2) {
+          match.time_slot = '10:00 - 15:00';
+        } else if (!isM1 && !isM2) {
+          match.time_slot = '17:30 - 22:00';
+        } else {
+          match.time_slot = '23:00 - Selesai';
+        }
+      } else {
+        const prevRoundMatches = matchesByRound[r - 1];
+
+        // Slot 1 origin
+        let s1: 'morning' | 'evening' | 'cross' = 'cross';
+        if (match.team1_id && teamMap.has(match.team1_id)) {
+          const t1 = teamMap.get(match.team1_id)!;
+          s1 = isMorningSlot(t1.time_slot) ? 'morning' : 'evening';
+        } else {
+          const f1 = prevRoundMatches.find((pm) => pm.next_match_id === match.id && pm.next_match_slot === 1);
+          if (f1) {
+            s1 = f1.time_slot === '10:00 - 15:00' ? 'morning' : f1.time_slot === '17:30 - 22:00' ? 'evening' : 'cross';
+          }
+        }
+
+        // Slot 2 origin
+        let s2: 'morning' | 'evening' | 'cross' = 'cross';
+        if (match.team2_id && teamMap.has(match.team2_id)) {
+          const t2 = teamMap.get(match.team2_id)!;
+          s2 = isMorningSlot(t2.time_slot) ? 'morning' : 'evening';
+        } else {
+          const f2 = prevRoundMatches.find((pm) => pm.next_match_id === match.id && pm.next_match_slot === 2);
+          if (f2) {
+            s2 = f2.time_slot === '10:00 - 15:00' ? 'morning' : f2.time_slot === '17:30 - 22:00' ? 'evening' : 'cross';
+          }
+        }
+
+        if (s1 === 'morning' && s2 === 'morning') {
+          match.time_slot = '10:00 - 15:00';
+        } else if (s1 === 'evening' && s2 === 'evening') {
+          match.time_slot = '17:30 - 22:00';
+        } else {
+          match.time_slot = '23:00 - Selesai';
+        }
+      }
+    });
+  }
+
   // Multi-Day Automatic Time & Date Allocation (Round-by-Round Sequential & Parallel)
   const allDates = generateDateList(startDateStr, endDateStr);
   const finalDate = allDates.length > 0 ? allDates[allDates.length - 1] : endDateStr;
