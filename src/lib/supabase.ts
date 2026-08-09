@@ -185,7 +185,18 @@ CREATE TABLE IF NOT EXISTS public.telegram_settings (
   updated_at TIMESTAMPTZ DEFAULT NOW()
 );
 
--- Migration support for existing telegram_settings tables
+-- Migration support for existing tables
+ALTER TABLE public.tournaments ADD COLUMN IF NOT EXISTS start_date TEXT;
+ALTER TABLE public.tournaments ADD COLUMN IF NOT EXISTS end_date TEXT;
+ALTER TABLE public.tournaments ADD COLUMN IF NOT EXISTS third_place_match BOOLEAN DEFAULT false;
+
+ALTER TABLE public.teams ADD COLUMN IF NOT EXISTS time_slot TEXT DEFAULT '10:00 - 15:00';
+
+ALTER TABLE public.matches ADD COLUMN IF NOT EXISTS time_slot TEXT DEFAULT '10:00 - 15:00';
+ALTER TABLE public.matches ADD COLUMN IF NOT EXISTS is_third_place BOOLEAN DEFAULT false;
+ALTER TABLE public.matches ADD COLUMN IF NOT EXISTS date TEXT;
+ALTER TABLE public.matches ADD COLUMN IF NOT EXISTS time TEXT;
+
 ALTER TABLE public.telegram_settings ADD COLUMN IF NOT EXISTS bot1_topic_id TEXT;
 ALTER TABLE public.telegram_settings ADD COLUMN IF NOT EXISTS bot2_topic_id TEXT;
 
@@ -218,21 +229,21 @@ ALTER TABLE public.telegram_settings DISABLE ROW LEVEL SECURITY;
 
 GRANT ALL ON ALL TABLES IN SCHEMA public TO anon, authenticated, postgres, service_role;
 
--- 8. Default Seed Data
+-- 8. Default Seed Data (ON CONFLICT DO NOTHING handles any constraint conflict safely)
 INSERT INTO public.panitia_members (id, name, username, password, role, phone, division, status)
 VALUES 
   ('panitia_master', 'Mas Ageng (Master Admin)', 'admin', '123', 'master', '081234567890', 'Koordinator Utama', 'active'),
   ('panitia_field', 'Mas Rian (Panitia Lapangan)', 'panitia', '123', 'anggota', '089876543210', 'Seksi Lapangan & Skor', 'active')
-ON CONFLICT (id) DO NOTHING;
+ON CONFLICT DO NOTHING;
 
 INSERT INTO public.time_slots (id, slot_label, is_default)
 VALUES 
   ('slot_1', '10:00 - 15:00', true),
   ('slot_2', '17:30 - 22:00', true),
   ('slot_3', '23:00 - Selesai', true)
-ON CONFLICT (id) DO NOTHING;
+ON CONFLICT DO NOTHING;
 
 INSERT INTO public.telegram_settings (id, bot1_enabled, bot2_enabled, auto_notify_score, auto_notify_schedule)
 VALUES ('default', false, false, true, true)
-ON CONFLICT (id) DO NOTHING;
+ON CONFLICT DO NOTHING;
 `;
