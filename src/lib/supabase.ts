@@ -229,21 +229,21 @@ ALTER TABLE public.telegram_settings DISABLE ROW LEVEL SECURITY;
 
 GRANT ALL ON ALL TABLES IN SCHEMA public TO anon, authenticated, postgres, service_role;
 
--- 8. Default Seed Data (ON CONFLICT DO NOTHING handles any constraint conflict safely)
+-- 8. Default Seed Data
 INSERT INTO public.panitia_members (id, name, username, password, role, phone, division, status)
 VALUES 
   ('panitia_master', 'Mas Ageng (Master Admin)', 'admin', '123', 'master', '081234567890', 'Koordinator Utama', 'active'),
   ('panitia_field', 'Mas Rian (Panitia Lapangan)', 'panitia', '123', 'anggota', '089876543210', 'Seksi Lapangan & Skor', 'active')
-ON CONFLICT DO NOTHING;
+ON CONFLICT (username) DO NOTHING;
 
 INSERT INTO public.time_slots (id, slot_label, is_default)
 VALUES 
   ('slot_1', '10:00 - 15:00', true),
   ('slot_2', '17:30 - 22:00', true),
   ('slot_3', '23:00 - Selesai', true)
-ON CONFLICT DO NOTHING;
+ON CONFLICT (slot_label) DO NOTHING;
 
 INSERT INTO public.telegram_settings (id, bot1_enabled, bot2_enabled, auto_notify_score, auto_notify_schedule)
 VALUES ('default', false, false, true, true)
-ON CONFLICT DO NOTHING;
+ON CONFLICT (id) DO NOTHING;
 `;

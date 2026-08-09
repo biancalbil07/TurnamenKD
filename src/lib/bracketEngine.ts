@@ -360,13 +360,166 @@ export class MultiDaySchedulerClock {
   }
 }
 
+interface SubBracketData {
+  matchesByRound: Match[][];
+  rounds: number;
+  finalMatch: Match | null;
+  branchSize: number;
+}
+
+function buildSubBracket(
+  tournamentId: string,
+  teams: Team[],
+  timeSlotLabel: '10:00 - 15:00' | '17:30 - 22:00',
+  branchPrefix: 'M' | 'E',
+  shuffle: boolean,
+  startDateStr: string,
+  now: string
+): SubBracketData | null {
+  if (teams.length === 0) return null;
+
+  const sorted = [...teams];
+  const sortFn = (a: Team, b: Team) => (a.seed || 0) - (b.seed || 0);
+  if (shuffle) {
+    sorted.sort(() => Math.random() - 0.5);
+  } else {
+    sorted.sort(sortFn);
+  }
+
+  const numTeams = sorted.length;
+  const branchSize = getBracketSize(numTeams);
+  const totalRounds = Math.log2(branchSize);
+  const byeCount = branchSize - numTeams;
+
+  const byeTeams = sorted.slice(0, byeCount);
+  const r1Teams = sorted.slice(byeCount);
+  const r1MatchCount = Math.floor(r1Teams.length / 2);
+
+  const matchesByRound: Match[][] = [];
+
+  for (let r = 1; r <= totalRounds; r++) {
+    let numMatchesInRound = 0;
+    if (r === 1) {
+      numMatchesInRound = r1MatchCount;
+    } else {
+      numMatchesInRound = branchSize / Math.pow(2, r);
+    }
+
+    const roundMatches: Match[] = [];
+    for (let i = 0; i < numMatchesInRound; i++) {
+      const matchId = `match_${tournamentId}_${branchPrefix}_r${r}_m${i + 1}`;
+      const code = `${branchPrefix}-R${r}-M${i + 1}`;
+      const roundName = totalRounds === 1 ? `Final Sesi (${branchPrefix === 'M' ? 'Pagi' : 'Sore'})` : `${getRoundName(r, totalRounds)} (${branchPrefix === 'M' ? 'Pagi' : 'Sore'})`;
+
+      roundMatches.push({
+        id: matchId,
+        tournament_id: tournamentId,
+        round_number: r,
+        round_name: roundName,
+        match_code: code,
+        team1_id: null,
+        team2_id: null,
+        team1_name: 'TBD',
+        team2_name: 'TBD',
+        team1_score: null,
+        team2_score: null,
+        winner_id: null,
+        next_match_id: null,
+        next_match_slot: null,
+        status: 'scheduled',
+        venue: 'Lapangan A',
+        date: startDateStr,
+        time: timeSlotLabel === '10:00 - 15:00' ? '10:00' : '17:30',
+        time_slot: timeSlotLabel,
+        updated_at: now,
+      });
+    }
+    matchesByRound.push(roundMatches);
+  }
+
+  // Populate Round 1 matches
+  const round1 = matchesByRound[0] || [];
+  for (let i = 0; i < r1MatchCount; i++) {
+    const match = round1[i];
+    const t1 = r1Teams[i * 2];
+    const t2 = r1Teams[i * 2 + 1];
+    if (match && t1 && t2) {
+      match.team1_id = t1.id;
+      match.team1_name = t1.name;
+      match.team2_id = t2.id;
+      match.team2_name = t2.name;
+      match.time_slot = timeSlotLabel;
+    }
+  }
+
+  // Link Round 1 -> Round 2 (Place BYEs directly into Round 2 slots)
+  if (totalRounds >= 2) {
+    const halfR2Slots = branchSize / 2;
+    const feederOrder = getFeederOrder(halfR2Slots);
+    const round2Matches = matchesByRound[1] || [];
+
+    let byeIdx = 0;
+    let r1Idx = 0;
+
+    feederOrder.forEach((slotIndex, orderPos) => {
+      const targetMatchIdx = Math.floor(slotIndex / 2);
+      const targetSlot = (slotIndex % 2 === 0 ? 1 : 2) as 1 | 2;
+      const r2Match = round2Matches[targetMatchIdx];
+
+      if (orderPos < byeCount) {
+        const byeTeam = byeTeams[byeIdx++];
+        if (byeTeam && r2Match) {
+          if (targetSlot === 1) {
+            r2Match.team1_id = byeTeam.id;
+            r2Match.team1_name = byeTeam.name;
+          } else {
+            r2Match.team2_id = byeTeam.id;
+            r2Match.team2_name = byeTeam.name;
+          }
+        }
+      } else {
+        if (r1Idx < r1MatchCount) {
+          const r1Match = round1[r1Idx++];
+          if (r1Match && r2Match) {
+            r1Match.next_match_id = r2Match.id;
+            r1Match.next_match_slot = targetSlot;
+          }
+        }
+      }
+    });
+
+    // Link Round 2 -> Round totalRounds
+    for (let r = 1; r < totalRounds - 1; r++) {
+      const currentRound = matchesByRound[r];
+      const nextRound = matchesByRound[r + 1];
+
+      currentRound.forEach((m, idx) => {
+        const targetMatchIdx = Math.floor(idx / 2);
+        const targetSlot = (idx % 2 === 0 ? 1 : 2) as 1 | 2;
+        if (nextRound[targetMatchIdx]) {
+          m.next_match_id = nextRound[targetMatchIdx].id;
+          m.next_match_slot = targetSlot;
+        }
+      });
+    }
+  }
+
+  const lastRoundMatches = matchesByRound[totalRounds - 1] || [];
+  const finalMatch = lastRoundMatches[0] || null;
+
+  return {
+    matchesByRound,
+    rounds: totalRounds,
+    finalMatch,
+    branchSize,
+  };
+}
+
 /**
- * Generates a complete knockout bracket with Dual-Branch Architecture (Cabang Pagi & Cabang Sore):
- * 1. Morning Branch (Top Half) contains ONLY Morning teams.
- * 2. Evening Branch (Bottom Half) contains ONLY Evening teams.
- * 3. Morning BYEs stay strictly in Morning Branch; Evening BYEs stay strictly in Evening Branch.
- * 4. Internal branch matches run sequentially at 30-minute intervals.
- * 5. Morning Winner and Evening Winner meet in Cross-Branch rounds (e.g. Grand Final) at flexible slot (23:00 - Selesai).
+ * Generates a complete knockout bracket with Independent Sub-Brackets:
+ * 1. Morning Sub-Bracket (Filtered ONLY Morning teams, independent BYE calculation & 10:00-15:00 slots).
+ * 2. Evening Sub-Bracket (Filtered ONLY Evening teams, independent BYE calculation & 17:30-22:00 slots).
+ * 3. Cross-Session Grand Final (Morning Winner vs Evening Winner at 23:00 - Selesai).
  */
 export function generateKnockoutMatches(
   tournamentId: string,
@@ -390,325 +543,136 @@ export function generateKnockoutMatches(
     }
   });
 
-  const sortFn = (a: Team, b: Team) => (a.seed || 0) - (b.seed || 0);
-
-  if (shuffle) {
-    morningTeams.sort(() => Math.random() - 0.5);
-    eveningTeams.sort(() => Math.random() - 0.5);
-  } else {
-    morningTeams.sort(sortFn);
-    eveningTeams.sort(sortFn);
-  }
-
-  const numM = morningTeams.length;
-  const numE = eveningTeams.length;
-
-  let branchSize = 0;
-  if (numM > 0 && numE > 0) {
-    branchSize = Math.max(2, getBracketSize(numM), getBracketSize(numE));
-  } else if (numM > 0) {
-    branchSize = getBracketSize(numM);
-  } else if (numE > 0) {
-    branchSize = getBracketSize(numE);
-  } else {
-    return [];
-  }
-
-  const isDualBranch = numM > 0 && numE > 0;
-  const bracketSize = isDualBranch ? branchSize * 2 : branchSize;
-  const totalRounds = Math.log2(bracketSize);
-  const branchRounds = Math.log2(branchSize);
-
-  // Internal session BYE counts
-  const mByeCount = numM > 0 ? branchSize - numM : 0;
-  const eByeCount = numE > 0 ? branchSize - numE : 0;
-
-  const morningBYETeams = morningTeams.slice(0, mByeCount);
-  const morningR1Teams = morningTeams.slice(mByeCount);
-
-  const eveningBYETeams = eveningTeams.slice(0, eByeCount);
-  const eveningR1Teams = eveningTeams.slice(eByeCount);
-
-  const mR1MatchCount = Math.floor(morningR1Teams.length / 2);
-  const eR1MatchCount = Math.floor(eveningR1Teams.length / 2);
-
-  const allMatches: Match[] = [];
-  const matchesByRound: Match[][] = [];
   const now = new Date().toISOString();
 
-  // Initialize empty match structures round by round
-  for (let r = 1; r <= totalRounds; r++) {
-    let numMatchesInRound = 0;
-    if (r === 1) {
-      if (isDualBranch) {
-        numMatchesInRound = mR1MatchCount + eR1MatchCount;
-      } else if (numM > 0) {
-        numMatchesInRound = mR1MatchCount;
-      } else {
-        numMatchesInRound = eR1MatchCount;
+  const mSub = buildSubBracket(tournamentId, morningTeams, '10:00 - 15:00', 'M', shuffle, startDateStr, now);
+  const eSub = buildSubBracket(tournamentId, eveningTeams, '17:30 - 22:00', 'E', shuffle, startDateStr, now);
+
+  if (!mSub && !eSub) return [];
+
+  let overallMatchesByRound: Match[][] = [];
+  let totalRounds = 0;
+
+  if (mSub && eSub) {
+    // Both Sub-Brackets Exist (Dual Branch)
+    const maxInternalRounds = Math.max(mSub.rounds, eSub.rounds);
+    totalRounds = maxInternalRounds + 1; // Last round is Grand Final (Cross-Session)
+
+    // Combine matches for rounds 1..maxInternalRounds
+    for (let r = 1; r <= maxInternalRounds; r++) {
+      const roundMatches: Match[] = [];
+
+      const mMatchList = mSub.matchesByRound[r - 1];
+      if (mMatchList) {
+        roundMatches.push(...mMatchList);
       }
-    } else {
-      numMatchesInRound = bracketSize / Math.pow(2, r);
+
+      const eMatchList = eSub.matchesByRound[r - 1];
+      if (eMatchList) {
+        roundMatches.push(...eMatchList);
+      }
+
+      overallMatchesByRound.push(roundMatches);
     }
 
-    const roundMatches: Match[] = [];
-    for (let i = 0; i < numMatchesInRound; i++) {
-      const matchId = `match_${tournamentId}_r${r}_m${i + 1}`;
-      const code = `R${r}-M${i + 1}`;
-      const roundName = getRoundName(r, totalRounds);
+    // Grand Final Match (Round maxInternalRounds + 1)
+    const grandFinalMatch: Match = {
+      id: `match_${tournamentId}_GF`,
+      tournament_id: tournamentId,
+      round_number: totalRounds,
+      round_name: 'Grand Final (Pagi vs Sore)',
+      match_code: 'GRAND-FINAL',
+      team1_id: null,
+      team2_id: null,
+      team1_name: 'Juara Sesi Pagi',
+      team2_name: 'Juara Sesi Sore',
+      team1_score: null,
+      team2_score: null,
+      winner_id: null,
+      next_match_id: null,
+      next_match_slot: null,
+      status: 'scheduled',
+      venue: 'Lapangan Utama',
+      date: endDateStr,
+      time: '19:00',
+      time_slot: '23:00 - Selesai',
+      updated_at: now,
+    };
 
-      roundMatches.push({
-        id: matchId,
+    // Connect Morning Final & Evening Final to Grand Final
+    if (mSub.finalMatch) {
+      mSub.finalMatch.next_match_id = grandFinalMatch.id;
+      mSub.finalMatch.next_match_slot = 1;
+    }
+    if (eSub.finalMatch) {
+      eSub.finalMatch.next_match_id = grandFinalMatch.id;
+      eSub.finalMatch.next_match_slot = 2;
+    }
+
+    const finalRoundMatches: Match[] = [grandFinalMatch];
+
+    // Perebutan Juara 3 (3rd Place Match)
+    if (includeThirdPlace) {
+      const thirdPlaceMatch: Match = {
+        id: `match_${tournamentId}_3rd`,
         tournament_id: tournamentId,
-        round_number: r,
-        round_name: roundName,
-        match_code: code,
+        round_number: totalRounds,
+        round_name: 'Perebutan Juara 3',
+        match_code: '3RD-PLACE',
         team1_id: null,
         team2_id: null,
-        team1_name: 'TBD',
-        team2_name: 'TBD',
+        team1_name: 'Runner-up Sesi Pagi',
+        team2_name: 'Runner-up Sesi Sore',
         team1_score: null,
         team2_score: null,
         winner_id: null,
         next_match_id: null,
         next_match_slot: null,
         status: 'scheduled',
-        venue: 'Lapangan A',
-        date: startDateStr,
-        time: '10:00',
-        time_slot: '10:00 - 15:00',
+        venue: 'Lapangan Utama',
+        date: endDateStr,
+        time: '17:30',
+        time_slot: '23:00 - Selesai',
         updated_at: now,
-      });
-    }
-    matchesByRound.push(roundMatches);
-  }
-
-  // Populate Round 1 & Round 2 Feeder Structure
-  const round1 = matchesByRound[0] || [];
-
-  if (isDualBranch) {
-    // 1. Fill Morning R1 matches (Top Half)
-    for (let i = 0; i < mR1MatchCount; i++) {
-      const match = round1[i];
-      const t1 = morningR1Teams[i * 2];
-      const t2 = morningR1Teams[i * 2 + 1];
-      if (match && t1 && t2) {
-        match.team1_id = t1.id;
-        match.team1_name = t1.name;
-        match.team2_id = t2.id;
-        match.team2_name = t2.name;
-        match.time_slot = '10:00 - 15:00';
-      }
+        is_third_place: true,
+      };
+      finalRoundMatches.push(thirdPlaceMatch);
     }
 
-    // 2. Fill Evening R1 matches (Bottom Half)
-    for (let i = 0; i < eR1MatchCount; i++) {
-      const match = round1[mR1MatchCount + i];
-      const t1 = eveningR1Teams[i * 2];
-      const t2 = eveningR1Teams[i * 2 + 1];
-      if (match && t1 && t2) {
-        match.team1_id = t1.id;
-        match.team1_name = t1.name;
-        match.team2_id = t2.id;
-        match.team2_name = t2.name;
-        match.time_slot = '17:30 - 22:00';
-      }
-    }
+    overallMatchesByRound.push(finalRoundMatches);
 
-    // Map Round 2 Feeder slots
-    const halfR2Slots = branchSize / 2;
-    const feederOrder = getFeederOrder(halfR2Slots);
-    const round2Matches = matchesByRound[1] || [];
-
-    // Morning Branch R2 Seeding (Top Half)
-    let mByeIdx = 0;
-    let mR1Idx = 0;
-    feederOrder.forEach((slotIndex, orderPos) => {
-      const targetMatchIdx = Math.floor(slotIndex / 2);
-      const targetSlot = (slotIndex % 2 === 0 ? 1 : 2) as 1 | 2;
-      const r2Match = round2Matches[targetMatchIdx];
-
-      if (orderPos < mByeCount) {
-        const byeTeam = morningBYETeams[mByeIdx++];
-        if (byeTeam && r2Match) {
-          if (targetSlot === 1) {
-            r2Match.team1_id = byeTeam.id;
-            r2Match.team1_name = byeTeam.name;
-          } else {
-            r2Match.team2_id = byeTeam.id;
-            r2Match.team2_name = byeTeam.name;
-          }
-        }
-      } else {
-        if (mR1Idx < mR1MatchCount) {
-          const r1Match = round1[mR1Idx++];
-          if (r1Match && r2Match) {
-            r1Match.next_match_id = r2Match.id;
-            r1Match.next_match_slot = targetSlot;
-          }
-        }
-      }
-    });
-
-    // Evening Branch R2 Seeding (Bottom Half)
-    let eByeIdx = 0;
-    let eR1Idx = 0;
-    feederOrder.forEach((slotIndex, orderPos) => {
-      const targetMatchIdx = Math.floor(halfR2Slots / 2) + Math.floor(slotIndex / 2);
-      const targetSlot = (slotIndex % 2 === 0 ? 1 : 2) as 1 | 2;
-      const r2Match = round2Matches[targetMatchIdx];
-
-      if (orderPos < eByeCount) {
-        const byeTeam = eveningBYETeams[eByeIdx++];
-        if (byeTeam && r2Match) {
-          if (targetSlot === 1) {
-            r2Match.team1_id = byeTeam.id;
-            r2Match.team1_name = byeTeam.name;
-          } else {
-            r2Match.team2_id = byeTeam.id;
-            r2Match.team2_name = byeTeam.name;
-          }
-        }
-      } else {
-        if (eR1Idx < eR1MatchCount) {
-          const r1Match = round1[mR1MatchCount + eR1Idx++];
-          if (r1Match && r2Match) {
-            r1Match.next_match_id = r2Match.id;
-            r1Match.next_match_slot = targetSlot;
-          }
-        }
-      }
-    });
-
-    // Standard next_match links for Round 2 onwards
-    for (let r = 1; r < totalRounds - 1; r++) {
-      const currentRound = matchesByRound[r];
-      const nextRound = matchesByRound[r + 1];
-
-      currentRound.forEach((m, idx) => {
-        const targetMatchIdx = Math.floor(idx / 2);
-        const targetSlot = (idx % 2 === 0 ? 1 : 2) as 1 | 2;
-        if (nextRound[targetMatchIdx]) {
-          m.next_match_id = nextRound[targetMatchIdx].id;
-          m.next_match_slot = targetSlot;
-        }
-      });
-    }
   } else {
-    // Single Branch (Only Morning or Only Evening)
-    const singleTeams = numM > 0 ? morningTeams : eveningTeams;
-    const byeCount = singleTeams.length > 0 ? branchSize - singleTeams.length : 0;
-    const byeTeams = singleTeams.slice(0, byeCount);
-    const r1Teams = singleTeams.slice(byeCount);
+    // Single Sub-Bracket
+    const singleSub = mSub || eSub!;
+    totalRounds = singleSub.rounds;
+    overallMatchesByRound = singleSub.matchesByRound;
 
-    if (byeCount === 0) {
-      round1.forEach((match, idx) => {
-        const t1 = r1Teams[idx * 2];
-        const t2 = r1Teams[idx * 2 + 1];
-        if (t1 && t2) {
-          match.team1_id = t1.id;
-          match.team1_name = t1.name;
-          match.team2_id = t2.id;
-          match.team2_name = t2.name;
-          match.time_slot = isMorningSlot(t1.time_slot) ? '10:00 - 15:00' : '17:30 - 22:00';
-        }
-      });
-
-      for (let r = 0; r < totalRounds - 1; r++) {
-        const currentRound = matchesByRound[r];
-        const nextRound = matchesByRound[r + 1];
-        currentRound.forEach((m, idx) => {
-          const targetMatchIdx = Math.floor(idx / 2);
-          const targetSlot = (idx % 2 === 0 ? 1 : 2) as 1 | 2;
-          if (nextRound[targetMatchIdx]) {
-            m.next_match_id = nextRound[targetMatchIdx].id;
-            m.next_match_slot = targetSlot;
-          }
-        });
-      }
-    } else {
-      round1.forEach((match, idx) => {
-        const t1 = r1Teams[idx * 2];
-        const t2 = r1Teams[idx * 2 + 1];
-        if (t1 && t2) {
-          match.team1_id = t1.id;
-          match.team1_name = t1.name;
-          match.team2_id = t2.id;
-          match.team2_name = t2.name;
-          match.time_slot = isMorningSlot(t1.time_slot) ? '10:00 - 15:00' : '17:30 - 22:00';
-        }
-      });
-
-      const totalR2Slots = branchSize / 2;
-      const feederOrder = getFeederOrder(totalR2Slots);
-      const round2Matches = matchesByRound[1] || [];
-
-      let byeTeamIdx = 0;
-      let r1MatchIdx = 0;
-
-      feederOrder.forEach((slotIndex, orderPos) => {
-        const targetMatchIdx = Math.floor(slotIndex / 2);
-        const targetSlot = (slotIndex % 2 === 0 ? 1 : 2) as 1 | 2;
-        const r2Match = round2Matches[targetMatchIdx];
-
-        if (orderPos < byeCount) {
-          const byeTeam = byeTeams[byeTeamIdx++];
-          if (byeTeam && r2Match) {
-            if (targetSlot === 1) {
-              r2Match.team1_id = byeTeam.id;
-              r2Match.team1_name = byeTeam.name;
-            } else {
-              r2Match.team2_id = byeTeam.id;
-              r2Match.team2_name = byeTeam.name;
-            }
-          }
-        } else {
-          if (r1MatchIdx < round1.length) {
-            const r1Match = round1[r1MatchIdx++];
-            if (r1Match && r2Match) {
-              r1Match.next_match_id = r2Match.id;
-              r1Match.next_match_slot = targetSlot;
-            }
-          }
-        }
-      });
-
-      for (let r = 1; r < totalRounds - 1; r++) {
-        const currentRound = matchesByRound[r];
-        const nextRound = matchesByRound[r + 1];
-        currentRound.forEach((m, idx) => {
-          const targetMatchIdx = Math.floor(idx / 2);
-          const targetSlot = (idx % 2 === 0 ? 1 : 2) as 1 | 2;
-          if (nextRound[targetMatchIdx]) {
-            m.next_match_id = nextRound[targetMatchIdx].id;
-            m.next_match_slot = targetSlot;
-          }
-        });
-      }
+    if (includeThirdPlace && totalRounds >= 2) {
+      const thirdPlaceMatch: Match = {
+        id: `match_${tournamentId}_3rd`,
+        tournament_id: tournamentId,
+        round_number: totalRounds,
+        round_name: 'Perebutan Juara 3',
+        match_code: '3RD-PLACE',
+        team1_id: null,
+        team2_id: null,
+        team1_name: 'Kalah Semifinal 1',
+        team2_name: 'Kalah Semifinal 2',
+        team1_score: null,
+        team2_score: null,
+        winner_id: null,
+        next_match_id: null,
+        next_match_slot: null,
+        status: 'scheduled',
+        venue: 'Lapangan Utama',
+        date: endDateStr,
+        time: '17:30',
+        time_slot: singleSub === mSub ? '10:00 - 15:00' : '17:30 - 22:00',
+        updated_at: now,
+        is_third_place: true,
+      };
+      overallMatchesByRound[overallMatchesByRound.length - 1].push(thirdPlaceMatch);
     }
-  }
-
-  // Assign session time_slots for matches
-  for (let r = 0; r < totalRounds; r++) {
-    const currentRoundMatches = matchesByRound[r];
-    const numInRound = currentRoundMatches.length;
-
-    currentRoundMatches.forEach((match, idx) => {
-      if (isDualBranch) {
-        if (r + 1 > branchRounds) {
-          match.time_slot = '23:00 - Selesai';
-        } else {
-          const isTopHalf = idx < numInRound / 2;
-          match.time_slot = isTopHalf ? '10:00 - 15:00' : '17:30 - 22:00';
-        }
-      } else {
-        if (numM > 0) {
-          match.time_slot = '10:00 - 15:00';
-        } else {
-          match.time_slot = '17:30 - 22:00';
-        }
-      }
-    });
   }
 
   // Multi-Day Automatic Time & Date Allocation with 30-minute intervals
@@ -717,12 +681,11 @@ export function generateKnockoutMatches(
   const preFinalDates = allDates.length > 1 ? allDates.slice(0, allDates.length - 1) : [startDateStr];
 
   const multiDayClock = new MultiDaySchedulerClock(preFinalDates, timeSlots);
-
   const numPreFinalRounds = Math.max(1, totalRounds - 1);
   const numPreFinalDates = preFinalDates.length;
 
   for (let r = 0; r < numPreFinalRounds; r++) {
-    const roundMatches = matchesByRound[r];
+    const roundMatches = overallMatchesByRound[r];
     if (!roundMatches || roundMatches.length === 0) continue;
 
     const startDIdx = Math.floor((r / numPreFinalRounds) * numPreFinalDates);
@@ -746,45 +709,23 @@ export function generateKnockoutMatches(
     });
   }
 
-  // Locked Final Day for FINAL match
-  const finalMatch = matchesByRound[totalRounds - 1]?.[0];
-  if (finalMatch) {
-    finalMatch.date = finalDate;
-    finalMatch.time = '19:00';
-    finalMatch.time_slot = isDualBranch ? '23:00 - Selesai' : numM > 0 ? '10:00 - 15:00' : '17:30 - 22:00';
-    finalMatch.venue = 'Lapangan Utama';
-  }
-
-  // Add 3rd Place match if enabled and totalRounds >= 2
-  if (includeThirdPlace && totalRounds >= 2) {
-    const thirdPlaceMatch: Match = {
-      id: `match_${tournamentId}_3rd`,
-      tournament_id: tournamentId,
-      round_number: totalRounds,
-      round_name: 'Perebutan Juara 3',
-      match_code: '3RD-PLACE',
-      team1_id: null,
-      team2_id: null,
-      team1_name: 'Kalah Semifinal 1',
-      team2_name: 'Kalah Semifinal 2',
-      team1_score: null,
-      team2_score: null,
-      winner_id: null,
-      next_match_id: null,
-      next_match_slot: null,
-      status: 'scheduled',
-      venue: 'Lapangan Utama',
-      date: finalDate,
-      time: '17:30',
-      time_slot: '17:30 - 22:00',
-      updated_at: now,
-      is_third_place: true,
-    };
-    matchesByRound[matchesByRound.length - 1].push(thirdPlaceMatch);
+  // Locked Final Day for Final matches (Grand Final & 3rd Place match)
+  const finalRoundMatches = overallMatchesByRound[totalRounds - 1];
+  if (finalRoundMatches && finalRoundMatches.length > 0) {
+    finalRoundMatches.forEach((m) => {
+      m.date = finalDate;
+      m.venue = 'Lapangan Utama';
+      if (m.is_third_place) {
+        m.time = '17:30';
+      } else {
+        m.time = '19:00';
+      }
+    });
   }
 
   // Flatten matches
-  matchesByRound.forEach((rm) => allMatches.push(...rm));
+  const allMatches: Match[] = [];
+  overallMatchesByRound.forEach((rm) => allMatches.push(...rm));
 
   return applyAutoProgression(allMatches);
 }
