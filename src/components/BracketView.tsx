@@ -4,6 +4,7 @@ import { Trophy, Clock, MapPin, Search, ZoomIn, ZoomOut, RotateCcw, AlertCircle,
 import confetti from 'canvas-confetti';
 import { toPng, toBlob } from 'html-to-image';
 import { sendTelegramBot2Photo } from '../lib/telegram';
+import { formatShortDate } from '../lib/bracketEngine';
 
 interface BracketViewProps {
   tournament: Tournament | undefined;
@@ -342,9 +343,9 @@ const MatchCard: React.FC<MatchCardProps> = ({ match, searchTerm, onSelect, isSp
             </span>
           )}
           {match.time && (
-            <span className="flex items-center gap-1 text-[10px] text-slate-400 font-mono font-bold">
+            <span className="flex items-center gap-1 text-[10px] text-slate-300 font-mono font-bold">
               <Clock className="w-3 h-3 text-amber-400" />
-              {match.time}
+              {match.date ? `${formatShortDate(match.date)} - ` : ''}{match.time}
             </span>
           )}
         </div>

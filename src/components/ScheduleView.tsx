@@ -3,6 +3,7 @@ import { Match, Tournament, Role } from '../types';
 import { Calendar, Clock, MapPin, Filter, Edit3, CheckCircle, Play, AlertCircle, Save } from 'lucide-react';
 import { updateMatches } from '../lib/db';
 import { notifyScheduleUpdate } from '../lib/telegram';
+import { formatShortDate } from '../lib/bracketEngine';
 
 interface ScheduleViewProps {
   tournament: Tournament | undefined;
@@ -150,7 +151,7 @@ export const ScheduleView: React.FC<ScheduleViewProps> = ({
                       <td className="px-4 py-3 font-medium text-slate-800">
                         <div className="flex items-center gap-1.5 font-bold text-red-700">
                           <Calendar className="w-3.5 h-3.5" />
-                          <span>{m.date || 'TBA'}</span>
+                          <span>{formatShortDate(m.date)}</span>
                         </div>
                         <div className="flex items-center gap-2 text-slate-500 text-[11px] mt-0.5">
                           <span className="flex items-center gap-1 font-bold">

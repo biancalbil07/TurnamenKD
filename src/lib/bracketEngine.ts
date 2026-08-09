@@ -1,4 +1,4 @@
-import { Match, Team, Tournament } from '../types';
+import { Match, Team, TimeSlot, Tournament } from '../types';
 
 export function getRoundName(roundNumber: number, totalRounds: number, isThirdPlace = false): string {
   if (isThirdPlace) return 'Perebutan Juara 3';
@@ -21,8 +21,28 @@ export function getBracketSize(teamCount: number): number {
 }
 
 /**
-Helper to group and pair teams by time_slot (09:00 - 15:00 vs 16:00 - 22:00)
-*/
+ * Formats YYYY-MM-DD or date string to short Indonesian date string (e.g., '14 Ags')
+ */
+export function formatShortDate(dateStr: string): string {
+  if (!dateStr) return 'TBA';
+  if (dateStr.includes('Ags') || dateStr.includes('Jan')) return dateStr;
+  const months = ['Jan', 'Feb', 'Mar', 'Apr', 'Mei', 'Jun', 'Jul', 'Ags', 'Sep', 'Okt', 'Nov', 'Des'];
+  const d = new Date(dateStr);
+  if (isNaN(d.getTime())) {
+    const parts = dateStr.split('-');
+    if (parts.length === 3) {
+      const day = parseInt(parts[2], 10);
+      const monthIdx = parseInt(parts[1], 10) - 1;
+      return `${day} ${months[monthIdx] || 'Ags'}`;
+    }
+    return dateStr;
+  }
+  return `${d.getDate()} ${months[d.getMonth()]}`;
+}
+
+/**
+ * Helper to group and pair teams by time_slot (09:00 - 15:00 vs 16:00 - 22:00)
+ */
 export function seedTeamsByTimeSlot(teams: Team[], shuffle = false): Team[] {
   const groups = new Map<string, Team[]>();
 
@@ -55,61 +75,145 @@ export function seedTeamsByTimeSlot(teams: Team[], shuffle = false): Team[] {
 }
 
 /**
- * Generates a complete knockout bracket for a tournament with Time Slot Seeding.
+ * Generates an interleaved feeder slot order for power-of-2 length (e.g. 4 -> [0, 2, 1, 3])
+ */
+function getFeederOrder(length: number): number[] {
+  if (length <= 1) return [0];
+  if (length === 2) return [0, 1];
+  const prev = getFeederOrder(length / 2);
+  const result: number[] = [];
+  for (const val of prev) {
+    result.push(val * 2);
+  }
+  for (const val of prev) {
+    result.push(val * 2 + 1);
+  }
+  return result;
+}
+
+/**
+ * Robust Multi-Day Date & Time Schedule Clock using JS Date objects
+ */
+class ScheduleClock {
+  private currentDate: Date;
+  private morningStart = 9;
+  private morningEnd = 15;
+  private eveningStart = 16;
+  private eveningEnd = 22;
+
+  constructor(startDateStr = '2026-08-14', timeSlots?: TimeSlot[]) {
+    // Parse custom time slots if available
+    if (timeSlots && timeSlots.length >= 2) {
+      const s1Match = timeSlots[0].slot_label.match(/(\d{1,2}):\d{2}\s*-\s*(\d{1,2}):\d{2}/);
+      const s2Match = timeSlots[1].slot_label.match(/(\d{1,2}):\d{2}\s*-\s*(\d{1,2}):\d{2}/);
+      if (s1Match) {
+        this.morningStart = parseInt(s1Match[1], 10);
+        this.morningEnd = parseInt(s1Match[2], 10);
+      }
+      if (s2Match) {
+        this.eveningStart = parseInt(s2Match[1], 10);
+        this.eveningEnd = parseInt(s2Match[2], 10);
+      }
+    }
+
+    const parts = startDateStr.split('-').map(Number);
+    if (parts.length === 3) {
+      this.currentDate = new Date(parts[0], parts[1] - 1, parts[2], this.morningStart, 0, 0);
+    } else {
+      this.currentDate = new Date(2026, 7, 14, this.morningStart, 0, 0); // Default 14 Aug 2026
+    }
+  }
+
+  getSlotLabel(): string {
+    const h = this.currentDate.getHours();
+    if (h >= this.morningStart && h < this.morningEnd) {
+      return `${String(this.morningStart).padStart(2, '0')}:00 - ${String(this.morningEnd).padStart(2, '0')}:00`;
+    }
+    return `${String(this.eveningStart).padStart(2, '0')}:00 - ${String(this.eveningEnd).padStart(2, '0')}:00`;
+  }
+
+  getTimeString(): string {
+    const h = String(this.currentDate.getHours()).padStart(2, '0');
+    const m = String(this.currentDate.getMinutes()).padStart(2, '0');
+    return `${h}:${m}`;
+  }
+
+  getDateISO(): string {
+    const y = this.currentDate.getFullYear();
+    const m = String(this.currentDate.getMonth() + 1).padStart(2, '0');
+    const d = String(this.currentDate.getDate()).padStart(2, '0');
+    return `${y}-${m}-${d}`;
+  }
+
+  allocateSlot(requestedSlot?: string): { date: string; time: string; time_slot: string } {
+    let hour = this.currentDate.getHours();
+
+    // If reached end of morning slot (e.g. 15:00), shift to start of evening slot (16:00)
+    if (hour >= this.morningEnd && hour < this.eveningStart) {
+      this.currentDate.setHours(this.eveningStart, 0, 0, 0);
+    }
+    // If reached end of evening slot (e.g. 22:00), rollover to NEXT DAY at 09:00!
+    if (this.currentDate.getHours() >= this.eveningEnd) {
+      this.currentDate.setDate(this.currentDate.getDate() + 1);
+      this.currentDate.setHours(this.morningStart, 0, 0, 0);
+    }
+
+    // Align with requested slot preference if specified
+    if (requestedSlot && requestedSlot.includes('16:00') && this.currentDate.getHours() < this.eveningStart) {
+      this.currentDate.setHours(this.eveningStart, 0, 0, 0);
+    }
+
+    const date = this.getDateISO();
+    const time = this.getTimeString();
+    const time_slot = this.getSlotLabel();
+
+    // Advance clock by 1 hour for next match
+    this.currentDate.setHours(this.currentDate.getHours() + 1);
+
+    // Re-check boundaries after increment
+    hour = this.currentDate.getHours();
+    if (hour >= this.morningEnd && hour < this.eveningStart) {
+      this.currentDate.setHours(this.eveningStart, 0, 0, 0);
+    } else if (hour >= this.eveningEnd) {
+      this.currentDate.setDate(this.currentDate.getDate() + 1);
+      this.currentDate.setHours(this.morningStart, 0, 0, 0);
+    }
+
+    return { date, time, time_slot };
+  }
+}
+
+/**
+ * Generates a complete knockout bracket with:
+ * 1. Proper BYE placement (BYE teams skip Babak 1 and stand directly in Babak 2 waiting for Round 1 winners).
+ * 2. Multi-Day Automatic Scheduling with JS Date objects (09:00-15:00 & 16:00-22:00).
+ * 3. Final & 3rd Place match strictly locked to 16 August (puncak event).
  */
 export function generateKnockoutMatches(
   tournamentId: string,
   teams: Team[],
   includeThirdPlace = true,
-  shuffle = false
+  shuffle = false,
+  timeSlots?: TimeSlot[],
+  startDateStr = '2026-08-14'
 ): Match[] {
   if (teams.length < 2) return [];
 
   const orderedTeams = seedTeamsByTimeSlot(teams, shuffle);
-  const bracketSize = getBracketSize(orderedTeams.length); // e.g. 8 or 16 or 32
-  const totalRounds = Math.log2(bracketSize); // e.g. 3 for 8, 4 for 16
+  const teamCount = orderedTeams.length;
+  const bracketSize = getBracketSize(teamCount); // e.g. 8 or 16 or 32
+  const totalRounds = Math.log2(bracketSize);
 
-  // Pad teams with BYE entries up to bracketSize
-  const paddedTeams: (Team | { id: string; name: string; time_slot?: string })[] = [...orderedTeams];
-  const byeCount = bracketSize - orderedTeams.length;
-  for (let i = 0; i < byeCount; i++) {
-    paddedTeams.push({
-      id: `bye_${i + 1}`,
-      name: 'BYE',
-    });
-  }
-
-  // Interleave BYE slots so seeded/top teams get BYEs cleanly
-  const distributedTeams: (Team | { id: string; name: string; time_slot?: string })[] = new Array(bracketSize);
-  if (byeCount > 0) {
-    let teamIdx = 0;
-    let byeIdx = 0;
-    for (let i = 0; i < bracketSize; i++) {
-      if (i % 2 === 1 && byeIdx < byeCount && teamIdx < orderedTeams.length) {
-        distributedTeams[i] = { id: `bye_${byeIdx + 1}`, name: 'BYE' };
-        byeIdx++;
-      } else if (teamIdx < orderedTeams.length) {
-        distributedTeams[i] = orderedTeams[teamIdx++];
-      } else {
-        distributedTeams[i] = { id: `bye_${byeIdx + 1}`, name: 'BYE' };
-        byeIdx++;
-      }
-    }
-  } else {
-    for (let i = 0; i < bracketSize; i++) {
-      distributedTeams[i] = orderedTeams[i];
-    }
-  }
+  const byeCount = bracketSize - teamCount;
+  const numR1Matches = teamCount - bracketSize / 2; // Real matches in Round 1
 
   const allMatches: Match[] = [];
   const matchesByRound: Match[][] = [];
-
-  let matchCounter = 1;
-  const slotCounters = new Map<string, number>();
   const now = new Date().toISOString();
 
+  // Initialize empty matches structure round by round
   for (let r = 1; r <= totalRounds; r++) {
-    const numMatchesInRound = bracketSize / Math.pow(2, r);
+    const numMatchesInRound = r === 1 ? numR1Matches : bracketSize / Math.pow(2, r);
     const roundMatches: Match[] = [];
 
     for (let i = 0; i < numMatchesInRound; i++) {
@@ -134,85 +238,134 @@ export function generateKnockoutMatches(
         next_match_slot: null,
         status: 'scheduled',
         venue: 'Lapangan A',
-        date: new Date().toISOString().split('T')[0],
-        time: `${String(8 + matchCounter).padStart(2, '0')}:00`,
+        date: startDateStr,
+        time: '09:00',
         time_slot: '09:00 - 15:00',
         updated_at: now,
       });
-      matchCounter++;
     }
     matchesByRound.push(roundMatches);
   }
 
-  // Link next_match_id and next_match_slot
-  for (let r = 0; r < totalRounds - 1; r++) {
-    const currentRound = matchesByRound[r];
-    const nextRound = matchesByRound[r + 1];
+  // Populate Teams & Link Feeder Structure:
+  // If no BYEs (byeCount === 0), standard Round 1 initialization:
+  if (byeCount === 0) {
+    const round1 = matchesByRound[0];
+    round1.forEach((match, idx) => {
+      const t1 = orderedTeams[idx * 2];
+      const t2 = orderedTeams[idx * 2 + 1];
+      match.team1_id = t1.id;
+      match.team1_name = t1.name;
+      match.team2_id = t2.id;
+      match.team2_name = t2.name;
+      match.time_slot = t1.time_slot || t2.time_slot || '09:00 - 15:00';
+    });
 
-    currentRound.forEach((m, idx) => {
-      const targetMatchIdx = Math.floor(idx / 2);
-      const targetSlot = (idx % 2 === 0 ? 1 : 2) as 1 | 2;
-      m.next_match_id = nextRound[targetMatchIdx].id;
-      m.next_match_slot = targetSlot;
+    // Standard next_match links for all rounds
+    for (let r = 0; r < totalRounds - 1; r++) {
+      const currentRound = matchesByRound[r];
+      const nextRound = matchesByRound[r + 1];
+
+      currentRound.forEach((m, idx) => {
+        const targetMatchIdx = Math.floor(idx / 2);
+        const targetSlot = (idx % 2 === 0 ? 1 : 2) as 1 | 2;
+        m.next_match_id = nextRound[targetMatchIdx].id;
+        m.next_match_slot = targetSlot;
+      });
+    }
+  } else {
+    // BYE Placement:
+    // Top `byeCount` teams receive BYE directly into Round 2 slots.
+    // Remaining `2 * numR1Matches` teams play in `numR1Matches` Round 1 matches.
+    const byeTeams = orderedTeams.slice(0, byeCount);
+    const r1Teams = orderedTeams.slice(byeCount);
+
+    // Populate Round 1 matches with real teams only (NO dummy BYE matches)
+    const round1 = matchesByRound[0];
+    round1.forEach((match, idx) => {
+      const t1 = r1Teams[idx * 2];
+      const t2 = r1Teams[idx * 2 + 1];
+      if (t1 && t2) {
+        match.team1_id = t1.id;
+        match.team1_name = t1.name;
+        match.team2_id = t2.id;
+        match.team2_name = t2.name;
+        match.time_slot = t1.time_slot || t2.time_slot || '09:00 - 15:00';
+      }
+    });
+
+    // Map Round 2 Feeder slots
+    const totalR2Slots = bracketSize / 2;
+    const feederOrder = getFeederOrder(totalR2Slots);
+    const round2Matches = matchesByRound[1];
+
+    let byeTeamIdx = 0;
+    let r1MatchIdx = 0;
+
+    feederOrder.forEach((slotIndex, orderPos) => {
+      const targetMatchIdx = Math.floor(slotIndex / 2);
+      const targetSlot = (slotIndex % 2 === 0 ? 1 : 2) as 1 | 2;
+      const r2Match = round2Matches[targetMatchIdx];
+
+      if (orderPos < byeCount) {
+        // Place BYE team directly in Round 2 slot (waiting for Round 1 winner or another BYE)
+        const byeTeam = byeTeams[byeTeamIdx++];
+        if (byeTeam && r2Match) {
+          if (targetSlot === 1) {
+            r2Match.team1_id = byeTeam.id;
+            r2Match.team1_name = byeTeam.name;
+          } else {
+            r2Match.team2_id = byeTeam.id;
+            r2Match.team2_name = byeTeam.name;
+          }
+        }
+      } else {
+        // Link a Round 1 match winner to this Round 2 slot
+        if (r1MatchIdx < round1.length) {
+          const r1Match = round1[r1MatchIdx++];
+          r1Match.next_match_id = r2Match.id;
+          r1Match.next_match_slot = targetSlot;
+        }
+      }
+    });
+
+    // Standard next_match links for Round 2 onwards
+    for (let r = 1; r < totalRounds - 1; r++) {
+      const currentRound = matchesByRound[r];
+      const nextRound = matchesByRound[r + 1];
+
+      currentRound.forEach((m, idx) => {
+        const targetMatchIdx = Math.floor(idx / 2);
+        const targetSlot = (idx % 2 === 0 ? 1 : 2) as 1 | 2;
+        m.next_match_id = nextRound[targetMatchIdx].id;
+        m.next_match_slot = targetSlot;
+      });
+    }
+  }
+
+  // Multi-Day Automatic Time & Date Allocation (Clock Engine)
+  const clock = new ScheduleClock(startDateStr, timeSlots);
+
+  // Allocate dates/times round by round for early rounds
+  for (let r = 0; r < totalRounds - 1; r++) {
+    const roundMatches = matchesByRound[r];
+    roundMatches.forEach((m, i) => {
+      m.venue = i % 2 === 0 ? 'Lapangan A' : 'Lapangan B';
+      const slotAlloc = clock.allocateSlot(m.time_slot);
+      m.date = slotAlloc.date;
+      m.time = slotAlloc.time;
+      m.time_slot = slotAlloc.time_slot;
     });
   }
 
-  // Populate Round 1 Teams & Set Time Slots
-  const round1 = matchesByRound[0];
-  round1.forEach((match, idx) => {
-    const t1 = distributedTeams[idx * 2];
-    const t2 = distributedTeams[idx * 2 + 1];
-
-    match.team1_id = t1.id;
-    match.team1_name = t1.name;
-    match.team2_id = t2.id;
-    match.team2_name = t2.name;
-
-    const slot1_val = (t1 as Team).time_slot || (t1.name !== 'BYE' ? '09:00 - 15:00' : undefined);
-    const slot2_val = (t2 as Team).time_slot || (t2.name !== 'BYE' ? '09:00 - 15:00' : undefined);
-
-    if (t1.name !== 'BYE' && t2.name !== 'BYE') {
-      if (slot1_val && slot2_val && slot1_val === slot2_val) {
-        match.time_slot = slot1_val;
-        const startHourMatch = slot1_val.match(/(\d{1,2}):/);
-        const baseHour = startHourMatch ? Number(startHourMatch[1]) : 9;
-        const matchOffset = (slotCounters.get(slot1_val) || 0) % 6;
-        slotCounters.set(slot1_val, (slotCounters.get(slot1_val) || 0) + 1);
-        match.time = `${String(baseHour + matchOffset).padStart(2, '0')}:00`;
-      } else {
-        // Cross-slot conflict in Round 1
-        match.time_slot = '23:00 - Selesai';
-        match.time = '23:00';
-      }
-    } else {
-      // One or both is BYE
-      const activeSlot = slot1_val || slot2_val || '09:00 - 15:00';
-      match.time_slot = activeSlot;
-      const startHourMatch = activeSlot.match(/(\d{1,2}):/);
-      const baseHour = startHourMatch ? Number(startHourMatch[1]) : 9;
-      const matchOffset = (slotCounters.get(activeSlot) || 0) % 6;
-      slotCounters.set(activeSlot, (slotCounters.get(activeSlot) || 0) + 1);
-      match.time = `${String(baseHour + matchOffset).padStart(2, '0')}:00`;
-    }
-
-    // Auto Advance BYE in Round 1
-    if (t1.name === 'BYE' && t2.name !== 'BYE') {
-      match.winner_id = t2.id;
-      match.status = 'bye';
-      match.team2_score = 1;
-      match.team1_score = 0;
-    } else if (t2.name === 'BYE' && t1.name !== 'BYE') {
-      match.winner_id = t1.id;
-      match.status = 'bye';
-      match.team1_score = 1;
-      match.team2_score = 0;
-    } else if (t1.name === 'BYE' && t2.name === 'BYE') {
-      match.status = 'bye';
-    }
-  });
-
-  // Flatten matches
-  matchesByRound.forEach((rm) => allMatches.push(...rm));
+  // Locked Final Day (16 Agustus) for FINAL and 3rd Place Match
+  const finalMatch = matchesByRound[totalRounds - 1][0];
+  if (finalMatch) {
+    finalMatch.date = '2026-08-16';
+    finalMatch.time = '19:00';
+    finalMatch.time_slot = '16:00 - 22:00';
+    finalMatch.venue = 'Lapangan Utama';
+  }
 
   // Add 3rd Place match if enabled and totalRounds >= 2
   if (includeThirdPlace && totalRounds >= 2) {
@@ -232,117 +385,24 @@ export function generateKnockoutMatches(
       next_match_id: null,
       next_match_slot: null,
       status: 'scheduled',
-      venue: 'Lapangan B',
-      date: new Date().toISOString().split('T')[0],
-      time: '15:00',
-      time_slot: '09:00 - 15:00',
+      venue: 'Lapangan Utama',
+      date: '2026-08-16', // Locked to 16 Agustus
+      time: '16:00',
+      time_slot: '16:00 - 22:00',
       updated_at: now,
       is_third_place: true,
     };
-    allMatches.push(thirdPlaceMatch);
+    matchesByRound[matchesByRound.length - 1].push(thirdPlaceMatch);
   }
 
-  // Apply auto-progression & time slot conflict resolution
-  return recalculateMatchTimeSlots(applyAutoProgression(allMatches), teams);
+  // Flatten matches
+  matchesByRound.forEach((rm) => allMatches.push(...rm));
+
+  return applyAutoProgression(allMatches);
 }
 
 /**
- * Recalculates time slots and detects cross-slot conflicts for downstream matches (Semi Final, Grand Final, etc.)
- */
-export function recalculateMatchTimeSlots(matches: Match[], teams: Team[]): Match[] {
-  const teamMap = new Map<string, Team>(teams.map((t) => [t.id, t]));
-  const matchMap = new Map<string, Match>(matches.map((m) => [m.id, { ...m }]));
-
-  // Find feeders for each match
-  const feedersMap = new Map<string, Match[]>();
-  for (const m of matchMap.values()) {
-    if (m.next_match_id) {
-      const existing = feedersMap.get(m.next_match_id) || [];
-      existing.push(m);
-      feedersMap.set(m.next_match_id, existing);
-    }
-  }
-
-  // Helper to get time slot set for a match node (including potential future winners)
-  const getPossibleSlots = (match: Match): Set<string> => {
-    const set = new Set<string>();
-
-    // If team1 is known
-    if (match.team1_id && match.team1_name !== 'TBD' && match.team1_name !== 'BYE') {
-      const slot = teamMap.get(match.team1_id)?.time_slot;
-      if (slot) set.add(slot);
-    }
-    // If team2 is known
-    if (match.team2_id && match.team2_name !== 'TBD' && match.team2_name !== 'BYE') {
-      const slot = teamMap.get(match.team2_id)?.time_slot;
-      if (slot) set.add(slot);
-    }
-
-    // If team slot directly on match is set
-    if (match.time_slot) {
-      set.add(match.time_slot);
-    }
-
-    // Check upstream feeders
-    const feeders = feedersMap.get(match.id) || [];
-    for (const feeder of feeders) {
-      const subSlots = getPossibleSlots(feeder);
-      subSlots.forEach((s) => set.add(s));
-    }
-
-    return set;
-  };
-
-  // Sort matches by round_number ascending
-  const sortedMatches = Array.from(matchMap.values()).sort((a, b) => a.round_number - b.round_number);
-
-  for (const match of sortedMatches) {
-    if (match.round_number === 1) continue; // Round 1 initialized already
-
-    const feeders = feedersMap.get(match.id) || [];
-
-    // Check actual team 1 and team 2 slots if populated
-    const t1Slot = match.team1_id ? teamMap.get(match.team1_id)?.time_slot : undefined;
-    const t2Slot = match.team2_id ? teamMap.get(match.team2_id)?.time_slot : undefined;
-
-    if (t1Slot && t2Slot) {
-      if (t1Slot === t2Slot) {
-        match.time_slot = t1Slot;
-        if (match.time === '23:00') {
-          const startHourMatch = t1Slot.match(/(\d{1,2}):/);
-          if (startHourMatch) {
-            match.time = `${String(Math.min(22, Number(startHourMatch[1]) + 4)).padStart(2, '0')}:00`;
-          } else {
-            match.time = '14:00';
-          }
-        }
-      } else {
-        // Cross-Slot Conflict! (e.g. Tim Slot A vs Tim Slot B)
-        match.time_slot = '23:00 - Selesai';
-        match.time = '23:00';
-      }
-    } else if (feeders.length === 2) {
-      const f1Slots = Array.from(getPossibleSlots(feeders[0]));
-      const f2Slots = Array.from(getPossibleSlots(feeders[1]));
-
-      if (
-        f1Slots.includes('23:00 - Selesai') ||
-        f2Slots.includes('23:00 - Selesai') ||
-        (f1Slots.length === 1 && f2Slots.length === 1 && f1Slots[0] !== f2Slots[0])
-      ) {
-        match.time_slot = '23:00 - Selesai';
-        match.time = '23:00';
-      } else if (f1Slots.length === 1 && f2Slots.length === 1 && f1Slots[0] === f2Slots[0]) {
-        match.time_slot = f1Slots[0];
-      }
-    }
-  }
-
-  return Array.from(matchMap.values());
-}
-
-/**
- * Propagates winners (including BYEs) through next_match_id links.
+ * Propagates winners through next_match_id links.
  */
 export function applyAutoProgression(matches: Match[]): Match[] {
   const matchMap = new Map<string, Match>(matches.map((m) => [m.id, { ...m }]));
@@ -369,17 +429,6 @@ export function applyAutoProgression(matches: Match[]): Match[] {
           } else if (targetSlot === 2 && (nextMatch.team2_id !== match.winner_id || nextMatch.team2_name !== winnerName)) {
             nextMatch.team2_id = match.winner_id;
             nextMatch.team2_name = winnerName;
-            updatedNext = true;
-          }
-
-          // Check if nextMatch now faces a BYE or is a single BYE match
-          if (nextMatch.team1_name === 'BYE' && nextMatch.team2_name !== 'BYE' && nextMatch.team2_name !== 'TBD') {
-            nextMatch.winner_id = nextMatch.team2_id;
-            nextMatch.status = 'bye';
-            updatedNext = true;
-          } else if (nextMatch.team2_name === 'BYE' && nextMatch.team1_name !== 'BYE' && nextMatch.team1_name !== 'TBD') {
-            nextMatch.winner_id = nextMatch.team1_id;
-            nextMatch.status = 'bye';
             updatedNext = true;
           }
 
@@ -472,7 +521,6 @@ export function processMatchScoreUpdate(
           nextMatch.team2_name = 'TBD';
         }
 
-        // If next match had a winner derived from previous winner, reset it as well recursively
         if (nextMatch.winner_id && previousWinnerId && nextMatch.winner_id === previousWinnerId) {
           nextMatch.winner_id = null;
           nextMatch.team1_score = null;
@@ -507,10 +555,6 @@ export function processMatchScoreUpdate(
     matchesMap.set(thirdPlaceMatch.id, thirdPlaceMatch);
   }
 
-  let updatedList = applyAutoProgression(Array.from(matchesMap.values()));
-  if (teams && teams.length > 0) {
-    updatedList = recalculateMatchTimeSlots(updatedList, teams);
-  }
-
+  const updatedList = applyAutoProgression(Array.from(matchesMap.values()));
   return { updatedMatches: updatedList, winnerName };
 }

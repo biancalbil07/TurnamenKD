@@ -110,7 +110,7 @@ export async function initDatabase() {
   if (appData.tournaments.length === 0) {
     appData.tournaments = [DEFAULT_TOURNAMENT];
     appData.teams = DEFAULT_TEAMS;
-    appData.matches = generateKnockoutMatches(DEFAULT_TOURNAMENT.id, DEFAULT_TEAMS, true, false);
+    appData.matches = generateKnockoutMatches(DEFAULT_TOURNAMENT.id, DEFAULT_TEAMS, true, false, DEFAULT_TIME_SLOTS);
     appData.panitiaMembers = DEFAULT_MEMBERS;
     appData.timeSlots = DEFAULT_TIME_SLOTS;
     appData.auditLogs = [
@@ -341,7 +341,7 @@ export async function addTournament(tournament: Tournament, initialTeams: Team[]
 
   if (initialTeams.length > 0) {
     appData.teams.push(...initialTeams);
-    const matches = generateKnockoutMatches(tournament.id, initialTeams, tournament.third_place_match, false);
+    const matches = generateKnockoutMatches(tournament.id, initialTeams, tournament.third_place_match, false, appData.timeSlots);
     appData.matches.push(...matches);
   }
 
@@ -394,7 +394,7 @@ export async function saveTeamsAndRegenerateMatches(
 
   appData.teams.push(...newTeams);
 
-  const newMatches = generateKnockoutMatches(tournamentId, newTeams, includeThirdPlace, shuffle);
+  const newMatches = generateKnockoutMatches(tournamentId, newTeams, includeThirdPlace, shuffle, appData.timeSlots);
   appData.matches.push(...newMatches);
 
   logAudit(
