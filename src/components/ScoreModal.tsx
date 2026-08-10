@@ -28,6 +28,8 @@ export const ScoreModal: React.FC<ScoreModalProps> = ({
   const [date, setDate] = useState(match.date || new Date().toISOString().split('T')[0]);
   const [time, setTime] = useState(match.time || '10:00');
   const [notifyTelegram, setNotifyTelegram] = useState(true);
+  const [isWO, setIsWO] = useState<boolean>(match.is_wo || false);
+  const [woWinnerId, setWoWinnerId] = useState<string | null>(match.wo_winner_id || null);
 
   useEffect(() => {
     setT1Score(match.team1_score ?? '');
@@ -35,14 +37,24 @@ export const ScoreModal: React.FC<ScoreModalProps> = ({
     setVenue(match.venue || 'Lapangan A');
     setDate(match.date || new Date().toISOString().split('T')[0]);
     setTime(match.time || '10:00');
+    setIsWO(match.is_wo || false);
+    setWoWinnerId(match.wo_winner_id || null);
   }, [match]);
 
   const handleSave = async () => {
     const score1 = t1Score === '' ? null : Number(t1Score);
     const score2 = t2Score === '' ? null : Number(t2Score);
 
-    // Process score update in engine
-    const { updatedMatches, winnerName } = processMatchScoreUpdate(allMatches, match.id, score1, score2);
+    // Process score/WO update in engine
+    const { updatedMatches, winnerName } = processMatchScoreUpdate(
+      allMatches,
+      match.id,
+      score1,
+      score2,
+      undefined,
+      isWO,
+      woWinnerId
+    );
 
     // Update match schedule/venue info for target match
     const target = updatedMatches.find((m) => m.id === match.id);
@@ -52,7 +64,9 @@ export const ScoreModal: React.FC<ScoreModalProps> = ({
       target.time = time;
     }
 
-    const logDetail = `Input skor [${match.match_code}]: ${match.team1_name} (${score1 ?? 0}) VS ${match.team2_name} (${score2 ?? 0}) - Pemenang: ${winnerName || 'Belum Ada'}`;
+    const logDetail = isWO
+      ? `Menang WO [${match.match_code}]: Pemenang WO ${winnerName || 'Belum Ada'}`
+      : `Input skor [${match.match_code}]: ${match.team1_name} (${score1 ?? 0}) VS ${match.team2_name} (${score2 ?? 0}) - Pemenang: ${winnerName || 'Belum Ada'}`;
 
     await updateMatches(tournament.id, updatedMatches, currentUser, logDetail);
 
@@ -65,7 +79,7 @@ export const ScoreModal: React.FC<ScoreModalProps> = ({
   };
 
   const handleResetScore = async () => {
-    const { updatedMatches } = processMatchScoreUpdate(allMatches, match.id, null, null);
+    const { updatedMatches } = processMatchScoreUpdate(allMatches, match.id, null, null, undefined, false, null);
     await updateMatches(
       tournament.id,
       updatedMatches,
@@ -183,6 +197,66 @@ export const ScoreModal: React.FC<ScoreModalProps> = ({
               )}
             </div>
 
+          </div>
+
+          {/* Menang WO (Walkover) Option Box */}
+          <div className="bg-amber-50 rounded-xl p-3.5 border border-amber-200 space-y-2">
+            <div className="text-xs font-bold text-amber-900 flex items-center justify-between">
+              <span className="flex items-center gap-1.5 font-extrabold">
+                ⚡ Status Menang WO (Walkover)
+              </span>
+              {isWO && (
+                <span className="text-[10px] bg-amber-600 text-white font-black px-2 py-0.5 rounded-full uppercase tracking-wider animate-pulse">
+                  Status WO Aktif
+                </span>
+              )}
+            </div>
+            <p className="text-[11px] text-amber-800 leading-relaxed">
+              Pilih tim yang dinyatakan <strong>Menang WO</strong> jika tim lawan diskualifikasi / tidak hadir. Pemenang WO otomatis maju ke babak berikutnya tanpa reset bagan.
+            </p>
+            <div className="grid grid-cols-2 gap-2.5 pt-1">
+              <button
+                type="button"
+                disabled={!match.team1_id}
+                onClick={() => {
+                  if (isWO && woWinnerId === match.team1_id) {
+                    setIsWO(false);
+                    setWoWinnerId(null);
+                  } else {
+                    setIsWO(true);
+                    setWoWinnerId(match.team1_id);
+                  }
+                }}
+                className={`py-2 px-3 rounded-xl text-xs font-black border transition flex items-center justify-center gap-1.5 shadow-sm ${
+                  isWO && woWinnerId === match.team1_id
+                    ? 'bg-amber-600 text-white border-amber-700 shadow-md ring-2 ring-amber-400/60'
+                    : 'bg-white text-slate-800 border-amber-300 hover:bg-amber-100/80'
+                }`}
+              >
+                🔴 {match.team1_name} Menang WO
+              </button>
+
+              <button
+                type="button"
+                disabled={!match.team2_id}
+                onClick={() => {
+                  if (isWO && woWinnerId === match.team2_id) {
+                    setIsWO(false);
+                    setWoWinnerId(null);
+                  } else {
+                    setIsWO(true);
+                    setWoWinnerId(match.team2_id);
+                  }
+                }}
+                className={`py-2 px-3 rounded-xl text-xs font-black border transition flex items-center justify-center gap-1.5 shadow-sm ${
+                  isWO && woWinnerId === match.team2_id
+                    ? 'bg-amber-600 text-white border-amber-700 shadow-md ring-2 ring-amber-400/60'
+                    : 'bg-white text-slate-800 border-amber-300 hover:bg-amber-100/80'
+                }`}
+              >
+                ⚪ {match.team2_name} Menang WO
+              </button>
+            </div>
           </div>
 
           {/* Schedule & Venue Fields */}

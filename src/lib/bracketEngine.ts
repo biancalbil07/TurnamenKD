@@ -798,7 +798,9 @@ export function processMatchScoreUpdate(
   targetMatchId: string,
   team1Score: number | null,
   team2Score: number | null,
-  teams?: Team[]
+  teams?: Team[],
+  isWO?: boolean,
+  woWinnerId?: string | null
 ): { updatedMatches: Match[]; winnerName: string | null } {
   const matchesMap = new Map<string, Match>(allMatches.map((m) => [m.id, { ...m }]));
   const match = matchesMap.get(targetMatchId);
@@ -814,30 +816,51 @@ export function processMatchScoreUpdate(
   let loserId: string | null = null;
   let loserName: string | null = null;
 
-  if (team1Score !== null && team2Score !== null) {
-    if (team1Score > team2Score) {
+  if (isWO && woWinnerId) {
+    match.is_wo = true;
+    match.wo_winner_id = woWinnerId;
+    match.status = 'completed';
+
+    if (woWinnerId === match.team1_id) {
       winnerId = match.team1_id;
       winnerName = match.team1_name;
       loserId = match.team2_id;
       loserName = match.team2_name;
-      match.status = 'completed';
-    } else if (team2Score > team1Score) {
+    } else if (woWinnerId === match.team2_id) {
       winnerId = match.team2_id;
       winnerName = match.team2_name;
       loserId = match.team1_id;
       loserName = match.team1_name;
-      match.status = 'completed';
-    } else {
-      // Draw (Need winner in knockout!)
-      winnerId = null;
-      winnerName = null;
-      match.status = 'live';
     }
   } else {
-    // Score cleared or reset
-    winnerId = null;
-    winnerName = null;
-    match.status = 'scheduled';
+    match.is_wo = false;
+    match.wo_winner_id = null;
+
+    if (team1Score !== null && team2Score !== null) {
+      if (team1Score > team2Score) {
+        winnerId = match.team1_id;
+        winnerName = match.team1_name;
+        loserId = match.team2_id;
+        loserName = match.team2_name;
+        match.status = 'completed';
+      } else if (team2Score > team1Score) {
+        winnerId = match.team2_id;
+        winnerName = match.team2_name;
+        loserId = match.team1_id;
+        loserName = match.team1_name;
+        match.status = 'completed';
+      } else {
+        // Draw (Need winner in knockout!)
+        winnerId = null;
+        winnerName = null;
+        match.status = 'live';
+      }
+    } else {
+      // Score cleared or reset
+      winnerId = null;
+      winnerName = null;
+      match.status = 'scheduled';
+    }
   }
 
   const previousWinnerId = match.winner_id;

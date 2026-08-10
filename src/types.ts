@@ -51,6 +51,8 @@ export interface Match {
   time_slot?: string;
   updated_at: string;
   is_third_place?: boolean;
+  is_wo?: boolean;
+  wo_winner_id?: string | null;
 }
 
 export interface PanitiaMember {

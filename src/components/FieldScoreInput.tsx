@@ -69,6 +69,35 @@ export const FieldScoreInput: React.FC<FieldScoreInputProps> = ({
     setTimeout(() => setIsSavedNotice(false), 2000);
   };
 
+  const handleDeclareWO = async (winningTeamId: string | null) => {
+    if (!selectedMatch) return;
+
+    const isWO = Boolean(winningTeamId);
+    const { updatedMatches, winnerName } = processMatchScoreUpdate(
+      matches,
+      selectedMatch.id,
+      selectedMatch.team1_score ?? 0,
+      selectedMatch.team2_score ?? 0,
+      undefined,
+      isWO,
+      winningTeamId
+    );
+
+    const logDetail = isWO
+      ? `Menang WO [${selectedMatch.match_code}]: Pemenang WO ${winnerName || 'TBA'}`
+      : `Reset status WO [${selectedMatch.match_code}]`;
+
+    await updateMatches(tournament.id, updatedMatches, currentUser, logDetail);
+
+    const updatedTarget = updatedMatches.find((m) => m.id === selectedMatch.id);
+    if (notifyTelegram && updatedTarget) {
+      await notifyMatchScore(updatedTarget, tournament, winnerName || undefined);
+    }
+
+    setIsSavedNotice(true);
+    setTimeout(() => setIsSavedNotice(false), 2000);
+  };
+
   return (
     <div className="space-y-6 max-w-4xl mx-auto">
       
@@ -208,6 +237,57 @@ export const FieldScoreInput: React.FC<FieldScoreInputProps> = ({
               </div>
             </div>
 
+          </div>
+
+          {/* Menang WO Action Bar */}
+          <div className="p-4 rounded-2xl bg-amber-950/40 border border-amber-800/60 text-xs space-y-2">
+            <div className="font-extrabold text-amber-300 flex items-center justify-between">
+              <span>⚡ Opsi Menang WO (Walkover)</span>
+              {selectedMatch.is_wo && (
+                <span className="bg-amber-500 text-slate-950 text-[10px] font-black px-2 py-0.5 rounded-full uppercase tracking-wider animate-pulse">
+                  Menang WO Aktif
+                </span>
+              )}
+            </div>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+              <button
+                type="button"
+                disabled={!selectedMatch.team1_id}
+                onClick={() => {
+                  if (selectedMatch.is_wo && selectedMatch.wo_winner_id === selectedMatch.team1_id) {
+                    handleDeclareWO(null);
+                  } else if (selectedMatch.team1_id) {
+                    handleDeclareWO(selectedMatch.team1_id);
+                  }
+                }}
+                className={`py-2.5 px-3 rounded-xl font-extrabold transition flex items-center justify-center gap-2 border ${
+                  selectedMatch.is_wo && selectedMatch.wo_winner_id === selectedMatch.team1_id
+                    ? 'bg-amber-500 text-slate-950 border-amber-400 font-black shadow-lg ring-2 ring-amber-400/50'
+                    : 'bg-slate-800 text-amber-200 border-amber-700/60 hover:bg-slate-700'
+                }`}
+              >
+                🔴 {selectedMatch.team1_name} Menang WO
+              </button>
+
+              <button
+                type="button"
+                disabled={!selectedMatch.team2_id}
+                onClick={() => {
+                  if (selectedMatch.is_wo && selectedMatch.wo_winner_id === selectedMatch.team2_id) {
+                    handleDeclareWO(null);
+                  } else if (selectedMatch.team2_id) {
+                    handleDeclareWO(selectedMatch.team2_id);
+                  }
+                }}
+                className={`py-2.5 px-3 rounded-xl font-extrabold transition flex items-center justify-center gap-2 border ${
+                  selectedMatch.is_wo && selectedMatch.wo_winner_id === selectedMatch.team2_id
+                    ? 'bg-amber-500 text-slate-950 border-amber-400 font-black shadow-lg ring-2 ring-amber-400/50'
+                    : 'bg-slate-800 text-amber-200 border-amber-700/60 hover:bg-slate-700'
+                }`}
+              >
+                ⚪ {selectedMatch.team2_name} Menang WO
+              </button>
+            </div>
           </div>
 
           {/* Telegram Option & Save Action */}

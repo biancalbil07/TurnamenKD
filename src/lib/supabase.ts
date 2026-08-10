@@ -135,7 +135,9 @@ CREATE TABLE IF NOT EXISTS public.matches (
   time TEXT,
   time_slot TEXT DEFAULT '10:00 - 15:00',
   updated_at TIMESTAMPTZ DEFAULT NOW(),
-  is_third_place BOOLEAN DEFAULT false
+  is_third_place BOOLEAN DEFAULT false,
+  is_wo BOOLEAN DEFAULT false,
+  wo_winner_id TEXT
 );
 
 -- 4. Panitia Members Table
@@ -196,6 +198,8 @@ ALTER TABLE public.matches ADD COLUMN IF NOT EXISTS time_slot TEXT DEFAULT '10:0
 ALTER TABLE public.matches ADD COLUMN IF NOT EXISTS is_third_place BOOLEAN DEFAULT false;
 ALTER TABLE public.matches ADD COLUMN IF NOT EXISTS date TEXT;
 ALTER TABLE public.matches ADD COLUMN IF NOT EXISTS time TEXT;
+ALTER TABLE public.matches ADD COLUMN IF NOT EXISTS is_wo BOOLEAN DEFAULT false;
+ALTER TABLE public.matches ADD COLUMN IF NOT EXISTS wo_winner_id TEXT;
 
 ALTER TABLE public.telegram_settings ADD COLUMN IF NOT EXISTS bot1_topic_id TEXT;
 ALTER TABLE public.telegram_settings ADD COLUMN IF NOT EXISTS bot2_topic_id TEXT;

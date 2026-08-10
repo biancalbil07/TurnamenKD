@@ -349,6 +349,11 @@ const MatchCard: React.FC<MatchCardProps> = ({ match, allMatches, searchTerm, on
           <span className="font-mono font-bold text-red-400 bg-red-950/60 px-1.5 py-0.5 rounded border border-red-800/50">
             {isSpecialBadge || match.match_code}
           </span>
+          {match.is_wo && (
+            <span className="text-[9px] bg-amber-950 text-amber-300 font-black px-1.5 py-0.5 rounded border border-amber-700 uppercase tracking-wider animate-pulse">
+              [WO]
+            </span>
+          )}
           {match.time_slot && (
             <span
               className={`text-[9px] font-extrabold px-1.5 py-0.5 rounded border ${
@@ -397,11 +402,16 @@ const MatchCard: React.FC<MatchCardProps> = ({ match, allMatches, searchTerm, on
           <div className="flex items-center gap-2 truncate pr-2 min-w-0 flex-1">
             {isT1Winner && <Trophy className="w-3.5 h-3.5 text-amber-400 shrink-0" />}
             {renderTeamSlot(Boolean(isT1Real), match.team1_name)}
+            {isT1Winner && match.is_wo && (
+              <span className="text-[9px] bg-amber-500 text-slate-950 font-black px-1 py-0.2 rounded uppercase shrink-0">
+                WO
+              </span>
+            )}
           </div>
           <span className={`font-mono text-sm px-2 py-0.5 rounded font-bold shrink-0 ${
             isT1Winner ? 'bg-emerald-500 text-slate-950' : 'bg-slate-800 text-slate-300'
           }`}>
-            {match.team1_score !== null ? match.team1_score : '-'}
+            {match.team1_score !== null ? match.team1_score : match.is_wo && isT1Winner ? 'WO' : '-'}
           </span>
         </div>
 
@@ -420,11 +430,16 @@ const MatchCard: React.FC<MatchCardProps> = ({ match, allMatches, searchTerm, on
           <div className="flex items-center gap-2 truncate pr-2 min-w-0 flex-1">
             {isT2Winner && <Trophy className="w-3.5 h-3.5 text-amber-400 shrink-0" />}
             {renderTeamSlot(Boolean(isT2Real), match.team2_name)}
+            {isT2Winner && match.is_wo && (
+              <span className="text-[9px] bg-amber-500 text-slate-950 font-black px-1 py-0.2 rounded uppercase shrink-0">
+                WO
+              </span>
+            )}
           </div>
           <span className={`font-mono text-sm px-2 py-0.5 rounded font-bold shrink-0 ${
             isT2Winner ? 'bg-emerald-500 text-slate-950' : 'bg-slate-800 text-slate-300'
           }`}>
-            {match.team2_score !== null ? match.team2_score : '-'}
+            {match.team2_score !== null ? match.team2_score : match.is_wo && isT2Winner ? 'WO' : '-'}
           </span>
         </div>
       </div>
@@ -432,7 +447,9 @@ const MatchCard: React.FC<MatchCardProps> = ({ match, allMatches, searchTerm, on
       {/* Footer hover hint & next match route info */}
       <div className="px-3 py-1.5 bg-slate-850/80 border-t border-slate-700/50 flex items-center justify-between text-[10px] text-slate-400">
         <span className="font-medium flex items-center gap-1">
-          {isMatchCompleted ? (
+          {match.is_wo ? (
+            <span className="text-amber-400 font-bold flex items-center gap-1">⚡ Menang WO</span>
+          ) : isMatchCompleted ? (
             <span className="text-emerald-400 font-bold">✅ Selesai</span>
           ) : isBye ? (
             <span className="text-blue-400 font-bold">⚡ Lolos Otomatis</span>
