@@ -801,11 +801,87 @@ export function processMatchScoreUpdate(
   teams?: Team[],
   isWO?: boolean,
   woWinnerId?: string | null
-): { updatedMatches: Match[]; winnerName: string | null } {
+): { updatedMatches: Match[]; winnerName: string | null; error?: string } {
   const matchesMap = new Map<string, Match>(allMatches.map((m) => [m.id, { ...m }]));
   const match = matchesMap.get(targetMatchId);
 
   if (!match) return { updatedMatches: allMatches, winnerName: null };
+
+  const previousWinnerId = match.winner_id;
+
+  // Determine potential winner/loser based on inputs
+  let potentialWinnerId: string | null = null;
+  let potentialWinnerName: string | null = null;
+  let potentialLoserId: string | null = null;
+  let potentialLoserName: string | null = null;
+
+  if (isWO && woWinnerId) {
+    if (woWinnerId === match.team1_id) {
+      potentialWinnerId = match.team1_id;
+      potentialWinnerName = match.team1_name;
+      potentialLoserId = match.team2_id;
+      potentialLoserName = match.team2_name;
+    } else if (woWinnerId === match.team2_id) {
+      potentialWinnerId = match.team2_id;
+      potentialWinnerName = match.team2_name;
+      potentialLoserId = match.team1_id;
+      potentialLoserName = match.team1_name;
+    }
+  } else if (team1Score !== null && team2Score !== null) {
+    if (team1Score > team2Score) {
+      potentialWinnerId = match.team1_id;
+      potentialWinnerName = match.team1_name;
+      potentialLoserId = match.team2_id;
+      potentialLoserName = match.team2_name;
+    } else if (team2Score > team1Score) {
+      potentialWinnerId = match.team2_id;
+      potentialWinnerName = match.team2_name;
+      potentialLoserId = match.team1_id;
+      potentialLoserName = match.team1_name;
+    }
+  }
+
+  // Safety Check: If winner is changing, check if downstream match is already played/in progress
+  if (previousWinnerId && previousWinnerId !== potentialWinnerId) {
+    if (match.next_match_id) {
+      const nextMatch = matchesMap.get(match.next_match_id);
+      if (nextMatch) {
+        const isNextMatchPlayed =
+          nextMatch.status === 'completed' ||
+          nextMatch.status === 'live' ||
+          (nextMatch.team1_score !== null && nextMatch.team1_score !== undefined) ||
+          (nextMatch.team2_score !== null && nextMatch.team2_score !== undefined) ||
+          Boolean(nextMatch.is_wo);
+
+        if (isNextMatchPlayed) {
+          return {
+            updatedMatches: allMatches,
+            winnerName: null,
+            error: 'Tidak dapat mengubah pemenang karena pertandingan babak berikutnya sudah berjalan.'
+          };
+        }
+      }
+    }
+
+    // Also check 3rd place match if Semifinal
+    const thirdPlaceMatch = Array.from(matchesMap.values()).find((m) => m.is_third_place);
+    if (thirdPlaceMatch && match.round_name === 'Semifinal') {
+      const is3rdPlayed =
+        thirdPlaceMatch.status === 'completed' ||
+        thirdPlaceMatch.status === 'live' ||
+        (thirdPlaceMatch.team1_score !== null && thirdPlaceMatch.team1_score !== undefined) ||
+        (thirdPlaceMatch.team2_score !== null && thirdPlaceMatch.team2_score !== undefined) ||
+        Boolean(thirdPlaceMatch.is_wo);
+
+      if (is3rdPlayed) {
+        return {
+          updatedMatches: allMatches,
+          winnerName: null,
+          error: 'Tidak dapat mengubah pemenang karena pertandingan perebutan juara 3 sudah berjalan.'
+        };
+      }
+    }
+  }
 
   match.team1_score = team1Score;
   match.team2_score = team2Score;
@@ -820,34 +896,20 @@ export function processMatchScoreUpdate(
     match.is_wo = true;
     match.wo_winner_id = woWinnerId;
     match.status = 'completed';
-
-    if (woWinnerId === match.team1_id) {
-      winnerId = match.team1_id;
-      winnerName = match.team1_name;
-      loserId = match.team2_id;
-      loserName = match.team2_name;
-    } else if (woWinnerId === match.team2_id) {
-      winnerId = match.team2_id;
-      winnerName = match.team2_name;
-      loserId = match.team1_id;
-      loserName = match.team1_name;
-    }
+    winnerId = potentialWinnerId;
+    winnerName = potentialWinnerName;
+    loserId = potentialLoserId;
+    loserName = potentialLoserName;
   } else {
     match.is_wo = false;
     match.wo_winner_id = null;
 
     if (team1Score !== null && team2Score !== null) {
-      if (team1Score > team2Score) {
-        winnerId = match.team1_id;
-        winnerName = match.team1_name;
-        loserId = match.team2_id;
-        loserName = match.team2_name;
-        match.status = 'completed';
-      } else if (team2Score > team1Score) {
-        winnerId = match.team2_id;
-        winnerName = match.team2_name;
-        loserId = match.team1_id;
-        loserName = match.team1_name;
+      if (team1Score > team2Score || team2Score > team1Score) {
+        winnerId = potentialWinnerId;
+        winnerName = potentialWinnerName;
+        loserId = potentialLoserId;
+        loserName = potentialLoserName;
         match.status = 'completed';
       } else {
         // Draw (Need winner in knockout!)
@@ -863,7 +925,6 @@ export function processMatchScoreUpdate(
     }
   }
 
-  const previousWinnerId = match.winner_id;
   match.winner_id = winnerId;
   matchesMap.set(match.id, match);
 

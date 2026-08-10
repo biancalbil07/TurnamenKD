@@ -463,7 +463,7 @@ const MatchCard: React.FC<MatchCardProps> = ({ match, allMatches, searchTerm, on
           )}
         </span>
         <span className="flex items-center gap-1 font-bold text-red-400 group-hover:translate-x-0.5 transition-transform">
-          Input Skor <Edit3 className="w-3 h-3" />
+          {isMatchCompleted ? 'Koreksi / Edit' : 'Input Skor'} <Edit3 className="w-3 h-3" />
         </span>
       </div>
     </div>

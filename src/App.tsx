@@ -287,6 +287,7 @@ export default function App() {
           <ScheduleView
             tournament={activeTournament}
             matches={dbState.matches}
+            teams={dbState.teams}
             onSelectMatch={(match) => setSelectedMatch(match)}
             currentUser={currentUser}
           />
@@ -332,6 +333,7 @@ export default function App() {
           match={selectedMatch}
           tournament={activeTournament}
           allMatches={dbState.matches}
+          teams={dbState.teams}
           onClose={() => setSelectedMatch(null)}
           currentUser={currentUser}
         />

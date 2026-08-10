@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
-import { Match, Tournament, Role } from '../types';
-import { Calendar, Clock, MapPin, Filter, Edit3, CheckCircle, Play, AlertCircle, Save } from 'lucide-react';
+import { Match, Tournament, Role, Team } from '../types';
+import { Calendar, Clock, MapPin, Filter, Edit3, CheckCircle, Play, AlertCircle, Save, ArrowLeftRight } from 'lucide-react';
 import { updateMatches } from '../lib/db';
 import { notifyScheduleUpdate } from '../lib/telegram';
 import { formatShortDate } from '../lib/bracketEngine';
@@ -8,6 +8,7 @@ import { formatShortDate } from '../lib/bracketEngine';
 interface ScheduleViewProps {
   tournament: Tournament | undefined;
   matches: Match[];
+  teams?: Team[];
   onSelectMatch: (match: Match) => void;
   currentUser: { name: string; role: Role };
 }
@@ -15,12 +16,14 @@ interface ScheduleViewProps {
 export const ScheduleView: React.FC<ScheduleViewProps> = ({
   tournament,
   matches,
+  teams,
   onSelectMatch,
   currentUser,
 }) => {
   if (!tournament) return null;
 
   const tournamentMatches = matches.filter((m) => m.tournament_id === tournament.id);
+  const tournamentTeams = (teams || []).filter((t) => t.tournament_id === tournament.id);
 
   const [statusFilter, setStatusFilter] = useState<'all' | 'scheduled' | 'live' | 'completed'>('all');
   const [venueFilter, setVenueFilter] = useState<string>('all');
@@ -289,11 +292,82 @@ export const ScheduleView: React.FC<ScheduleViewProps> = ({
             className="bg-white rounded-2xl max-w-md w-full shadow-2xl border border-slate-200 p-6 space-y-4"
           >
             <h3 className="text-lg font-black text-slate-800 flex items-center gap-2">
-              <Calendar className="w-5 h-5 text-red-600" /> Edit Jadwal & Venue
+              <Calendar className="w-5 h-5 text-red-600" /> Edit Jadwal, Venue & Tim
             </h3>
 
-            <div className="text-xs text-slate-500 bg-slate-50 p-2.5 rounded-lg border border-slate-200">
-              Match: <strong>{editingMatch.team1_name}</strong> vs <strong>{editingMatch.team2_name}</strong> ({editingMatch.match_code})
+            {/* Tim 1 & Tim 2 Selection + Swap Action */}
+            <div className="bg-slate-50 p-3.5 rounded-xl border border-slate-200 space-y-3">
+              <div className="text-xs font-extrabold text-slate-800 flex items-center justify-between">
+                <span>Match Code: <strong className="font-mono text-red-600">{editingMatch.match_code}</strong></span>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setEditingMatch({
+                      ...editingMatch,
+                      team1_id: editingMatch.team2_id,
+                      team1_name: editingMatch.team2_name,
+                      team2_id: editingMatch.team1_id,
+                      team2_name: editingMatch.team1_name,
+                      team1_score: editingMatch.team2_score,
+                      team2_score: editingMatch.team1_score,
+                    });
+                  }}
+                  className="px-2.5 py-1 bg-indigo-600 hover:bg-indigo-700 text-white font-bold rounded-lg text-[11px] flex items-center gap-1.5 transition shadow-sm"
+                  title="Tukar posisi Tim 1 dan Tim 2"
+                >
+                  <ArrowLeftRight className="w-3.5 h-3.5" /> Tukar Posisi Tim (⇄)
+                </button>
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5 text-xs">
+                <div>
+                  <label className="block text-[11px] font-extrabold text-slate-700 mb-1">🔴 Pilih Tim 1 (Home)</label>
+                  <select
+                    value={editingMatch.team1_id || ''}
+                    onChange={(e) => {
+                      const selectedId = e.target.value;
+                      const found = tournamentTeams.find((t) => t.id === selectedId);
+                      setEditingMatch({
+                        ...editingMatch,
+                        team1_id: selectedId || null,
+                        team1_name: found ? found.name : selectedId ? selectedId : 'TBD'
+                      });
+                    }}
+                    className="w-full px-2.5 py-2 bg-white border border-slate-300 rounded-xl font-bold text-slate-800 focus:ring-2 focus:ring-red-500"
+                  >
+                    <option value="">-- Pilih Tim 1 (TBD) --</option>
+                    {tournamentTeams.map((t) => (
+                      <option key={t.id} value={t.id}>
+                        {t.name} {t.time_slot ? `(${t.time_slot})` : ''}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+
+                <div>
+                  <label className="block text-[11px] font-extrabold text-slate-700 mb-1">⚪ Pilih Tim 2 (Away)</label>
+                  <select
+                    value={editingMatch.team2_id || ''}
+                    onChange={(e) => {
+                      const selectedId = e.target.value;
+                      const found = tournamentTeams.find((t) => t.id === selectedId);
+                      setEditingMatch({
+                        ...editingMatch,
+                        team2_id: selectedId || null,
+                        team2_name: found ? found.name : selectedId ? selectedId : 'TBD'
+                      });
+                    }}
+                    className="w-full px-2.5 py-2 bg-white border border-slate-300 rounded-xl font-bold text-slate-800 focus:ring-2 focus:ring-red-500"
+                  >
+                    <option value="">-- Pilih Tim 2 (TBD) --</option>
+                    {tournamentTeams.map((t) => (
+                      <option key={t.id} value={t.id}>
+                        {t.name} {t.time_slot ? `(${t.time_slot})` : ''}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              </div>
             </div>
 
             <div>

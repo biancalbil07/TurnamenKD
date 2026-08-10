@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { Match, Tournament, Role } from '../types';
-import { Smartphone, Trophy, Play, Check, Send, RotateCcw, Plus, Minus, MapPin, Clock } from 'lucide-react';
+import { Smartphone, Trophy, Play, Check, Send, RotateCcw, Plus, Minus, MapPin, Clock, AlertTriangle } from 'lucide-react';
 import { processMatchScoreUpdate } from '../lib/bracketEngine';
 import { updateMatches } from '../lib/db';
 import { notifyMatchScore } from '../lib/telegram';
@@ -32,11 +32,13 @@ export const FieldScoreInput: React.FC<FieldScoreInputProps> = ({
   const [t2Score, setT2Score] = useState<number>(selectedMatch?.team2_score ?? 0);
   const [notifyTelegram, setNotifyTelegram] = useState(true);
   const [isSavedNotice, setIsSavedNotice] = useState(false);
+  const [errorMsg, setErrorMsg] = useState<string | null>(null);
 
   React.useEffect(() => {
     if (selectedMatch) {
       setT1Score(selectedMatch.team1_score ?? 0);
       setT2Score(selectedMatch.team2_score ?? 0);
+      setErrorMsg(null);
     }
   }, [selectedMatchId, selectedMatch?.team1_score, selectedMatch?.team2_score]);
 
@@ -44,19 +46,26 @@ export const FieldScoreInput: React.FC<FieldScoreInputProps> = ({
     setSelectedMatchId(m.id);
     setT1Score(m.team1_score ?? 0);
     setT2Score(m.team2_score ?? 0);
+    setErrorMsg(null);
   };
 
   const handleQuickSubmitScore = async () => {
     if (!selectedMatch) return;
+    setErrorMsg(null);
 
-    const { updatedMatches, winnerName } = processMatchScoreUpdate(
+    const { updatedMatches, winnerName, error } = processMatchScoreUpdate(
       matches,
       selectedMatch.id,
       t1Score,
       t2Score
     );
 
-    const logDetail = `Input skor lapangan [${selectedMatch.match_code}]: ${selectedMatch.team1_name} (${t1Score}) VS ${selectedMatch.team2_name} (${t2Score}) - Winner: ${winnerName || 'TBA'}`;
+    if (error) {
+      setErrorMsg(error);
+      return;
+    }
+
+    const logDetail = `Input/Koreksi skor lapangan [${selectedMatch.match_code}]: ${selectedMatch.team1_name} (${t1Score}) VS ${selectedMatch.team2_name} (${t2Score}) - Winner: ${winnerName || 'TBA'}`;
 
     await updateMatches(tournament.id, updatedMatches, currentUser, logDetail);
 
@@ -71,9 +80,10 @@ export const FieldScoreInput: React.FC<FieldScoreInputProps> = ({
 
   const handleDeclareWO = async (winningTeamId: string | null) => {
     if (!selectedMatch) return;
+    setErrorMsg(null);
 
     const isWO = Boolean(winningTeamId);
-    const { updatedMatches, winnerName } = processMatchScoreUpdate(
+    const { updatedMatches, winnerName, error } = processMatchScoreUpdate(
       matches,
       selectedMatch.id,
       selectedMatch.team1_score ?? 0,
@@ -82,6 +92,11 @@ export const FieldScoreInput: React.FC<FieldScoreInputProps> = ({
       isWO,
       winningTeamId
     );
+
+    if (error) {
+      setErrorMsg(error);
+      return;
+    }
 
     const logDetail = isWO
       ? `Menang WO [${selectedMatch.match_code}]: Pemenang WO ${winnerName || 'TBA'}`
@@ -145,6 +160,18 @@ export const FieldScoreInput: React.FC<FieldScoreInputProps> = ({
       {selectedMatch ? (
         <div className="bg-slate-900 text-white rounded-3xl p-6 sm:p-8 shadow-2xl border border-slate-800 space-y-8">
           
+          {errorMsg && (
+            <div className="bg-red-950/90 border-2 border-red-600 text-red-100 text-xs font-bold rounded-2xl p-4 flex items-start gap-3 shadow-lg animate-in fade-in">
+              <AlertTriangle className="w-5 h-5 text-red-400 shrink-0 mt-0.5" />
+              <div className="leading-relaxed">
+                <span className="font-black uppercase tracking-wider block text-red-400 text-xs">
+                  ⚠️ Perubahan Ditolak
+                </span>
+                {errorMsg}
+              </div>
+            </div>
+          )}
+
           {/* Match Info Badge */}
           <div className="flex items-center justify-between text-xs text-slate-400 border-b border-slate-800 pb-4">
             <div className="flex items-center gap-2 font-mono font-bold text-red-400 bg-red-950/80 px-2.5 py-1 rounded-lg border border-red-800/50">
