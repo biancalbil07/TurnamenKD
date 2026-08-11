@@ -1132,27 +1132,64 @@ export function applyAutoProgression(matches: Match[]): Match[] {
     maxPasses--;
 
     for (const match of matchMap.values()) {
+      // Ensure team IDs are non-null if valid team names are present
+      if (!match.team1_id && match.team1_name && match.team1_name !== 'TBD' && match.team1_name !== 'BYE') {
+        match.team1_id = match.team1_name.trim();
+      }
+      if (!match.team2_id && match.team2_name && match.team2_name !== 'TBD' && match.team2_name !== 'BYE') {
+        match.team2_id = match.team2_name.trim();
+      }
+
       let winnerId: string | null = match.winner_id;
       let winnerName: string | null = null;
 
       if (winnerId) {
-        winnerName = match.winner_id === match.team1_id ? match.team1_name : match.team2_name;
+        if (winnerId === match.team1_id || winnerId === match.team1_name) {
+          winnerId = match.team1_id || match.team1_name;
+          winnerName = match.team1_name;
+        } else if (winnerId === match.team2_id || winnerId === match.team2_name) {
+          winnerId = match.team2_id || match.team2_name;
+          winnerName = match.team2_name;
+        } else {
+          winnerName = match.team1_id === winnerId ? match.team1_name : match.team2_name;
+        }
+      } else if (match.status === 'completed' && match.team1_score !== null && match.team2_score !== null) {
+        if (match.team1_score > match.team2_score) {
+          winnerId = match.team1_id || match.team1_name;
+          winnerName = match.team1_name;
+          match.winner_id = winnerId;
+        } else if (match.team2_score > match.team1_score) {
+          winnerId = match.team2_id || match.team2_name;
+          winnerName = match.team2_name;
+          match.winner_id = winnerId;
+        }
+      } else if (match.is_wo && match.wo_winner_id) {
+        winnerId = match.wo_winner_id;
+        if (match.wo_winner_id === match.team1_id || match.wo_winner_id === match.team1_name) {
+          winnerName = match.team1_name;
+        } else if (match.wo_winner_id === match.team2_id || match.wo_winner_id === match.team2_name) {
+          winnerName = match.team2_name;
+        }
+        match.winner_id = winnerId;
+        match.status = 'completed';
       } else if (match.status === 'bye' || match.team1_name === 'BYE' || match.team2_name === 'BYE') {
-        if (match.team1_name === 'BYE' && match.team2_id && match.team2_name && match.team2_name !== 'TBD' && match.team2_name !== 'BYE') {
-          winnerId = match.team2_id;
+        if (match.team1_name === 'BYE' && match.team2_name && match.team2_name !== 'TBD' && match.team2_name !== 'BYE') {
+          winnerId = match.team2_id || match.team2_name;
           winnerName = match.team2_name;
           match.status = 'bye';
-        } else if (match.team2_name === 'BYE' && match.team1_id && match.team1_name && match.team1_name !== 'TBD' && match.team1_name !== 'BYE') {
-          winnerId = match.team1_id;
+          match.winner_id = winnerId;
+        } else if (match.team2_name === 'BYE' && match.team1_name && match.team1_name !== 'TBD' && match.team1_name !== 'BYE') {
+          winnerId = match.team1_id || match.team1_name;
           winnerName = match.team1_name;
           match.status = 'bye';
+          match.winner_id = winnerId;
         }
       }
 
       if (winnerId && winnerName && match.next_match_id) {
         const nextMatch = matchMap.get(match.next_match_id);
         if (nextMatch) {
-          const targetSlot = match.next_match_slot;
+          const targetSlot = match.next_match_slot || 1;
 
           let updatedNext = false;
           if (targetSlot === 1 && (nextMatch.team1_id !== winnerId || nextMatch.team1_name !== winnerName)) {
@@ -1194,6 +1231,16 @@ export function processMatchScoreUpdate(
 
   if (!match) return { updatedMatches: allMatches, winnerName: null };
 
+  // Resolve team IDs if missing
+  if (!match.team1_id && match.team1_name && match.team1_name !== 'TBD' && match.team1_name !== 'BYE') {
+    const matched = teams?.find((t) => t.name.trim().toLowerCase() === match.team1_name.trim().toLowerCase());
+    match.team1_id = matched ? matched.id : match.team1_name.trim();
+  }
+  if (!match.team2_id && match.team2_name && match.team2_name !== 'TBD' && match.team2_name !== 'BYE') {
+    const matched = teams?.find((t) => t.name.trim().toLowerCase() === match.team2_name.trim().toLowerCase());
+    match.team2_id = matched ? matched.id : match.team2_name.trim();
+  }
+
   const previousWinnerId = match.winner_id;
 
   // Determine potential winner/loser based on inputs
@@ -1203,27 +1250,27 @@ export function processMatchScoreUpdate(
   let potentialLoserName: string | null = null;
 
   if (isWO && woWinnerId) {
-    if (woWinnerId === match.team1_id) {
-      potentialWinnerId = match.team1_id;
+    if (woWinnerId === match.team1_id || woWinnerId === match.team1_name) {
+      potentialWinnerId = match.team1_id || match.team1_name;
       potentialWinnerName = match.team1_name;
-      potentialLoserId = match.team2_id;
+      potentialLoserId = match.team2_id || match.team2_name;
       potentialLoserName = match.team2_name;
-    } else if (woWinnerId === match.team2_id) {
-      potentialWinnerId = match.team2_id;
+    } else if (woWinnerId === match.team2_id || woWinnerId === match.team2_name) {
+      potentialWinnerId = match.team2_id || match.team2_name;
       potentialWinnerName = match.team2_name;
-      potentialLoserId = match.team1_id;
+      potentialLoserId = match.team1_id || match.team1_name;
       potentialLoserName = match.team1_name;
     }
   } else if (team1Score !== null && team2Score !== null) {
     if (team1Score > team2Score) {
-      potentialWinnerId = match.team1_id;
+      potentialWinnerId = match.team1_id || match.team1_name;
       potentialWinnerName = match.team1_name;
-      potentialLoserId = match.team2_id;
+      potentialLoserId = match.team2_id || match.team2_name;
       potentialLoserName = match.team2_name;
     } else if (team2Score > team1Score) {
-      potentialWinnerId = match.team2_id;
+      potentialWinnerId = match.team2_id || match.team2_name;
       potentialWinnerName = match.team2_name;
-      potentialLoserId = match.team1_id;
+      potentialLoserId = match.team1_id || match.team1_name;
       potentialLoserName = match.team1_name;
     }
   }
