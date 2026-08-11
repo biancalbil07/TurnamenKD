@@ -2,7 +2,6 @@ import { createClient, SupabaseClient } from '@supabase/supabase-js';
 import { SupabaseConfig } from '../types';
 import { PATEN_SUPABASE_URL, PATEN_SUPABASE_ANON_KEY, supabase as patenClient } from './supabaseClient';
 
-// Default environment credentials or PATEN credentials
 const DEFAULT_SUPABASE_URL = (import.meta as any).env?.VITE_SUPABASE_URL || PATEN_SUPABASE_URL;
 const DEFAULT_SUPABASE_KEY = (import.meta as any).env?.VITE_SUPABASE_ANON_KEY || PATEN_SUPABASE_ANON_KEY;
 
@@ -77,7 +76,6 @@ export async function testSupabaseConnection(url: string, key: string): Promise<
     const { error } = await testClient.from('tournaments').select('count', { count: 'exact', head: true });
     
     if (error && error.code !== 'PGRST116') {
-      // If table doesn't exist yet, it's still connected!
       if (error.message.includes('relation "tournaments" does not exist') || error.code === '42P01') {
         return { success: true, message: 'Koneksi Berhasil! (Tabel belum dibuat, silakan jalankan SQL Schema)' };
       }
@@ -91,7 +89,7 @@ export async function testSupabaseConnection(url: string, key: string): Promise<
 }
 
 export const SUPABASE_SQL_SCHEMA = `-- SQL Schema & Setup for Turnamen KD in Supabase
--- Run this in your Supabase SQL Editor:
+-- Unified Single Elimination Bracket Schema (Safe update, preserves all existing data)
 
 -- 1. Tournaments Table
 CREATE TABLE IF NOT EXISTS public.tournaments (
@@ -100,6 +98,8 @@ CREATE TABLE IF NOT EXISTS public.tournaments (
   category TEXT NOT NULL,
   status TEXT NOT NULL DEFAULT 'active',
   third_place_match BOOLEAN DEFAULT false,
+  start_date TEXT,
+  end_date TEXT,
   created_at TIMESTAMPTZ DEFAULT NOW()
 );
 
@@ -113,7 +113,7 @@ CREATE TABLE IF NOT EXISTS public.teams (
   time_slot TEXT DEFAULT '10:00 - 15:00'
 );
 
--- 3. Matches Table
+-- 3. Matches Table (Unified Single Elimination)
 CREATE TABLE IF NOT EXISTS public.matches (
   id TEXT PRIMARY KEY,
   tournament_id TEXT REFERENCES public.tournaments(id) ON DELETE CASCADE,
@@ -129,6 +129,8 @@ CREATE TABLE IF NOT EXISTS public.matches (
   winner_id TEXT,
   next_match_id TEXT,
   next_match_slot INT,
+  loser_next_match_id TEXT,
+  loser_next_match_slot INT,
   status TEXT NOT NULL DEFAULT 'scheduled',
   venue TEXT DEFAULT 'Lapangan A',
   date TEXT,
@@ -171,7 +173,7 @@ CREATE TABLE IF NOT EXISTS public.time_slots (
   created_at TIMESTAMPTZ DEFAULT NOW()
 );
 
--- 7. Telegram Settings Table (Supports Group Topics / Threads)
+-- 7. Telegram Settings Table
 CREATE TABLE IF NOT EXISTS public.telegram_settings (
   id TEXT PRIMARY KEY DEFAULT 'default',
   bot1_token TEXT,
@@ -187,7 +189,7 @@ CREATE TABLE IF NOT EXISTS public.telegram_settings (
   updated_at TIMESTAMPTZ DEFAULT NOW()
 );
 
--- Migration support for existing tables
+-- Safe migrations for existing databases (adds missing columns without dropping tables)
 ALTER TABLE public.tournaments ADD COLUMN IF NOT EXISTS start_date TEXT;
 ALTER TABLE public.tournaments ADD COLUMN IF NOT EXISTS end_date TEXT;
 ALTER TABLE public.tournaments ADD COLUMN IF NOT EXISTS third_place_match BOOLEAN DEFAULT false;
@@ -200,11 +202,13 @@ ALTER TABLE public.matches ADD COLUMN IF NOT EXISTS date TEXT;
 ALTER TABLE public.matches ADD COLUMN IF NOT EXISTS time TEXT;
 ALTER TABLE public.matches ADD COLUMN IF NOT EXISTS is_wo BOOLEAN DEFAULT false;
 ALTER TABLE public.matches ADD COLUMN IF NOT EXISTS wo_winner_id TEXT;
+ALTER TABLE public.matches ADD COLUMN IF NOT EXISTS loser_next_match_id TEXT;
+ALTER TABLE public.matches ADD COLUMN IF NOT EXISTS loser_next_match_slot INT;
 
 ALTER TABLE public.telegram_settings ADD COLUMN IF NOT EXISTS bot1_topic_id TEXT;
 ALTER TABLE public.telegram_settings ADD COLUMN IF NOT EXISTS bot2_topic_id TEXT;
 
--- Enable Realtime safely & idempotently (No duplicate relation error!)
+-- Enable Realtime safely
 DO $$ 
 DECLARE 
   tbl TEXT;
@@ -222,7 +226,7 @@ BEGIN
   END LOOP;
 END $$;
 
--- Disable Row Level Security (RLS) and grant permissions for easy panitia & cross-browser management
+-- Disable Row Level Security (RLS) and grant permissions
 ALTER TABLE public.tournaments DISABLE ROW LEVEL SECURITY;
 ALTER TABLE public.teams DISABLE ROW LEVEL SECURITY;
 ALTER TABLE public.matches DISABLE ROW LEVEL SECURITY;
@@ -233,7 +237,7 @@ ALTER TABLE public.telegram_settings DISABLE ROW LEVEL SECURITY;
 
 GRANT ALL ON ALL TABLES IN SCHEMA public TO anon, authenticated, postgres, service_role;
 
--- 8. Default Seed Data
+-- Seed Default Data
 INSERT INTO public.panitia_members (id, name, username, password, role, phone, division, status)
 VALUES 
   ('panitia_master', 'Mas Ageng (Master Admin)', 'admin', '123', 'master', '081234567890', 'Koordinator Utama', 'active'),

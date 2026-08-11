@@ -440,17 +440,8 @@ const MatchCard: React.FC<MatchCardProps> = ({ match, allMatches, searchTerm, on
   const isMatchCompleted = match.status === 'completed';
   const isBye = match.status === 'bye';
 
-  const isT1Winner = Boolean(
-    (match.winner_id && (match.winner_id === match.team1_id || match.winner_id === match.team1_name)) ||
-    (isMatchCompleted && match.team1_score !== null && match.team2_score !== null && Number(match.team1_score) > Number(match.team2_score)) ||
-    (match.is_wo && match.wo_winner_id && (match.wo_winner_id === match.team1_id || match.wo_winner_id === match.team1_name))
-  );
-
-  const isT2Winner = Boolean(
-    (match.winner_id && (match.winner_id === match.team2_id || match.winner_id === match.team2_name)) ||
-    (isMatchCompleted && match.team1_score !== null && match.team2_score !== null && Number(match.team2_score) > Number(match.team1_score)) ||
-    (match.is_wo && match.wo_winner_id && (match.wo_winner_id === match.team2_id || match.wo_winner_id === match.team2_name))
-  );
+  const isT1Winner = match.winner_id && match.winner_id === match.team1_id;
+  const isT2Winner = match.winner_id && match.winner_id === match.team2_id;
 
   const isT1Real = match.team1_name && match.team1_name !== 'TBD' && match.team1_name.trim() !== '';
   const isT2Real = match.team2_name && match.team2_name !== 'TBD' && match.team2_name.trim() !== '';
@@ -569,11 +560,11 @@ const MatchCard: React.FC<MatchCardProps> = ({ match, allMatches, searchTerm, on
           } ${isT1Highlighted ? 'ring-2 ring-amber-400 bg-amber-950/80' : ''}`}
         >
           <div className="flex items-center gap-2 truncate pr-2 min-w-0 flex-1">
-            {isT1Winner && <Trophy className="w-3.5 h-3.5 text-amber-400 shrink-0 animate-bounce" />}
+            {isT1Winner && <Trophy className="w-3.5 h-3.5 text-amber-400 shrink-0" />}
             {renderTeamSlot(Boolean(isT1Real), match.team1_name)}
-            {isT1Winner && (
-              <span className="text-[9px] bg-emerald-500 text-slate-950 font-black px-1.5 py-0.5 rounded uppercase tracking-wider shrink-0 flex items-center gap-0.5 shadow-sm">
-                <CheckCircle2 className="w-2.5 h-2.5" /> {match.is_wo ? 'MENANG WO' : 'MENANG'}
+            {isT1Winner && match.is_wo && (
+              <span className="text-[9px] bg-amber-500 text-slate-950 font-black px-1 py-0.2 rounded uppercase shrink-0">
+                WO
               </span>
             )}
           </div>
@@ -597,11 +588,11 @@ const MatchCard: React.FC<MatchCardProps> = ({ match, allMatches, searchTerm, on
           } ${isT2Highlighted ? 'ring-2 ring-amber-400 bg-amber-950/80' : ''}`}
         >
           <div className="flex items-center gap-2 truncate pr-2 min-w-0 flex-1">
-            {isT2Winner && <Trophy className="w-3.5 h-3.5 text-amber-400 shrink-0 animate-bounce" />}
+            {isT2Winner && <Trophy className="w-3.5 h-3.5 text-amber-400 shrink-0" />}
             {renderTeamSlot(Boolean(isT2Real), match.team2_name)}
-            {isT2Winner && (
-              <span className="text-[9px] bg-emerald-500 text-slate-950 font-black px-1.5 py-0.5 rounded uppercase tracking-wider shrink-0 flex items-center gap-0.5 shadow-sm">
-                <CheckCircle2 className="w-2.5 h-2.5" /> {match.is_wo ? 'MENANG WO' : 'MENANG'}
+            {isT2Winner && match.is_wo && (
+              <span className="text-[9px] bg-amber-500 text-slate-950 font-black px-1 py-0.2 rounded uppercase shrink-0">
+                WO
               </span>
             )}
           </div>

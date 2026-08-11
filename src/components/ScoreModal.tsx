@@ -96,7 +96,7 @@ export const ScoreModal: React.FC<ScoreModalProps> = ({
       match.id,
       score1,
       score2,
-      tournamentTeams.length > 0 ? tournamentTeams : teams,
+      undefined,
       isWO,
       woWinnerId
     );
