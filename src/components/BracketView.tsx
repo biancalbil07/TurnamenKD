@@ -71,6 +71,76 @@ export const BracketView: React.FC<BracketViewProps> = ({
     roundMap[r] = tourMatches.filter((m) => m.round_number === r);
   }
 
+  // Organize matches in tree order so feeder pairs stay adjacent and align with target matches
+  const organizeMatchesByTreeOrder = (
+    map: { [key: number]: Match[] },
+    maxR: number
+  ): { [key: number]: Match[] } => {
+    const result: { [key: number]: Match[] } = {};
+
+    // Sort final round chronologically
+    const maxMatches = [...(map[maxR] || [])].sort((a, b) => {
+      const dateA = a.date || '';
+      const dateB = b.date || '';
+      if (dateA !== dateB) return dateA.localeCompare(dateB);
+      const timeA = a.time || '';
+      const timeB = b.time || '';
+      if (timeA !== timeB) return timeA.localeCompare(timeB);
+      return (a.match_code || a.id).localeCompare(b.match_code || b.id, undefined, { numeric: true });
+    });
+    result[maxR] = maxMatches;
+
+    // Process preceding rounds backwards to pair feeders directly with target match
+    for (let r = maxR - 1; r >= 1; r--) {
+      const currentMatches = map[r] || [];
+      const parentMatches = result[r + 1] || [];
+      const ordered: Match[] = [];
+      const usedIds = new Set<string>();
+
+      for (const parent of parentMatches) {
+        const feeders = currentMatches
+          .filter((m) => !usedIds.has(m.id) && m.next_match_id === parent.id)
+          .sort((a, b) => {
+            const slotA = a.next_match_slot || 1;
+            const slotB = b.next_match_slot || 1;
+            if (slotA !== slotB) return slotA - slotB;
+            const dateA = a.date || '';
+            const dateB = b.date || '';
+            if (dateA !== dateB) return dateA.localeCompare(dateB);
+            const timeA = a.time || '';
+            const timeB = b.time || '';
+            if (timeA !== timeB) return timeA.localeCompare(timeB);
+            return (a.match_code || a.id).localeCompare(b.match_code || b.id, undefined, { numeric: true });
+          });
+
+        for (const f of feeders) {
+          ordered.push(f);
+          usedIds.add(f.id);
+        }
+      }
+
+      // Add any leftover matches in this round
+      const leftovers = currentMatches
+        .filter((m) => !usedIds.has(m.id))
+        .sort((a, b) => {
+          const dateA = a.date || '';
+          const dateB = b.date || '';
+          if (dateA !== dateB) return dateA.localeCompare(dateB);
+          const timeA = a.time || '';
+          const timeB = b.time || '';
+          if (timeA !== timeB) return timeA.localeCompare(timeB);
+          return (a.match_code || a.id).localeCompare(b.match_code || b.id, undefined, { numeric: true });
+        });
+
+      ordered.push(...leftovers);
+      result[r] = ordered;
+    }
+
+    return result;
+  };
+
+  const organizedRoundMap = organizeMatchesByTreeOrder(roundMap, maxRound);
+
   // Export Bracket to PNG Download
   const handleDownloadImage = async () => {
     if (!bracketRef.current) return;
@@ -233,44 +303,112 @@ export const BracketView: React.FC<BracketViewProps> = ({
           style={{ transform: `scale(${zoomLevel / 100})`, transformOrigin: 'top left' }}
           className="flex items-stretch gap-12 min-w-max pb-8 pt-2 transition-transform duration-200"
         >
-          {Object.keys(roundMap).map((roundNumStr) => {
-            const roundNum = Number(roundNumStr);
-            const roundMatchesList = roundMap[roundNum];
-            const roundTitle = roundMatchesList[0]?.round_name || `Babak ${roundNum}`;
-            const isFinalRound = roundNum === maxRound;
+          {Object.keys(organizedRoundMap)
+            .map(Number)
+            .sort((a, b) => a - b)
+            .map((roundNum) => {
+              const roundMatchesList = organizedRoundMap[roundNum] || [];
+              if (roundMatchesList.length === 0) return null;
+              const isFinalRound = roundNum === maxRound;
 
-            return (
-              <div key={roundNum} className="flex flex-col min-w-[280px] max-w-[310px]">
-                {/* Round Header */}
-                <div className={`mb-6 text-center py-2 px-4 rounded-xl border font-black uppercase tracking-wider text-xs shadow-md ${
-                  isFinalRound
-                    ? 'bg-gradient-to-r from-amber-500 to-amber-600 text-slate-950 border-amber-300 ring-2 ring-amber-400/30'
-                    : 'bg-slate-800 text-red-400 border-slate-700'
-                }`}>
-                  {isFinalRound ? '👑 ' : ''}{roundTitle}
-                </div>
+              // Dynamic header naming based on actual match count and round structure
+              const rawName = roundMatchesList[0]?.round_name;
+              let roundTitle = '';
 
-                {/* Round Matches List */}
-                <div className="flex-1 flex flex-col justify-around gap-6">
-                  {roundMatchesList.map((m) => (
-                    <MatchCard
-                      key={m.id}
-                      match={m}
-                      allMatches={tourMatches}
-                      searchTerm={searchTerm}
-                      onSelect={() => onSelectMatch(m)}
-                    />
-                  ))}
+              if (isFinalRound) {
+                roundTitle = 'GRAND FINAL';
+              } else if (roundNum === maxRound - 1 && maxRound >= 2) {
+                roundTitle = 'SEMIFINAL';
+              } else if (roundMatchesList.length === 4) {
+                roundTitle = 'PEREMPAT FINAL';
+              } else if (roundMatchesList.length === 8) {
+                roundTitle = '16 BESAR';
+              } else if (rawName) {
+                const cleaned = rawName
+                  .replace(/\s*\((SORE|PAGI|SESI\s+SORE|SESI\s+PAGI)\)/gi, '')
+                  .replace(/\s+LANJUTAN\s+(SORE|PAGI)/gi, '')
+                  .replace(/\s+(SORE|PAGI)\b/gi, '')
+                  .replace(/LINTAS\s+SESI/gi, '')
+                  .trim();
+
+                if (cleaned && !/semifinal|final|perempat|16\s*besar/i.test(cleaned)) {
+                  roundTitle = cleaned.toUpperCase();
+                } else {
+                  roundTitle = `BABAK ${roundNum}`;
+                }
+              } else {
+                roundTitle = `BABAK ${roundNum}`;
+              }
+
+              // Strip any remaining (SORE), (PAGI), etc.
+              roundTitle = roundTitle
+                .replace(/\s*\((SORE|PAGI|SESI\s+SORE|SESI\s+PAGI)\)/gi, '')
+                .replace(/\s+LANJUTAN\s+(SORE|PAGI)/gi, '')
+                .replace(/\s+(SORE|PAGI)\b/gi, '')
+                .trim();
+
+              const roundDates = Array.from(
+                new Set(
+                  roundMatchesList
+                    .map((m) => m.date)
+                    .filter((d): d is string => Boolean(d) && d !== 'TBA')
+                )
+              ).sort();
+
+              const roundDateLabel =
+                roundDates.length > 0
+                  ? roundDates.length === 1
+                    ? formatShortDate(roundDates[0])
+                    : `${formatShortDate(roundDates[0])} - ${formatShortDate(roundDates[roundDates.length - 1])}`
+                  : null;
+
+              return (
+                <div key={roundNum} className="flex flex-col min-w-[280px] max-w-[310px] relative">
+                  {/* Round Header */}
+                  <div className={`mb-6 text-center py-2.5 px-4 rounded-xl border shadow-md z-10 flex flex-col items-center justify-center ${
+                    isFinalRound
+                      ? 'bg-gradient-to-r from-amber-500 to-amber-600 text-slate-950 border-amber-300 ring-2 ring-amber-400/30'
+                      : 'bg-slate-800 text-red-400 border-slate-700'
+                  }`}>
+                    <span className="font-black uppercase tracking-wider text-xs">
+                      {isFinalRound ? '👑 ' : ''}{roundTitle}
+                    </span>
+                    {roundDateLabel && (
+                      <span className={`text-[10px] font-semibold mt-0.5 ${isFinalRound ? 'text-slate-900/80' : 'text-slate-400'}`}>
+                        📅 {roundDateLabel}
+                      </span>
+                    )}
+                  </div>
+
+                  {/* Round Matches List */}
+                  <div className="flex-1 flex flex-col justify-around gap-6 py-2">
+                    {roundMatchesList.map((m) => (
+                      <MatchCard
+                        key={m.id}
+                        match={m}
+                        allMatches={tourMatches}
+                        searchTerm={searchTerm}
+                        onSelect={() => onSelectMatch(m)}
+                        isFinalRound={isFinalRound}
+                      />
+                    ))}
+                  </div>
                 </div>
-              </div>
-            );
-          })}
+              );
+            })}
 
           {/* Optional Perebutan Juara 3 Column */}
           {thirdPlaceMatch && (
             <div className="flex flex-col min-w-[280px] max-w-[310px] pl-6 border-l border-slate-800 border-dashed">
-              <div className="mb-6 text-center py-2 px-4 rounded-xl bg-orange-950 text-orange-300 border border-orange-700/50 font-black uppercase tracking-wider text-xs shadow-md">
-                🥉 Perebutan Juara 3
+              <div className="mb-6 text-center py-2 px-4 rounded-xl bg-orange-950 text-orange-300 border border-orange-700/50 flex flex-col items-center justify-center shadow-md">
+                <span className="font-black uppercase tracking-wider text-xs">
+                  🥉 Perebutan Juara 3
+                </span>
+                {thirdPlaceMatch.date && (
+                  <span className="text-[10px] font-semibold mt-0.5 text-orange-300/80">
+                    📅 {formatShortDate(thirdPlaceMatch.date)}
+                  </span>
+                )}
               </div>
               <div className="flex-1 flex items-center justify-center">
                 <MatchCard
@@ -295,9 +433,10 @@ interface MatchCardProps {
   searchTerm: string;
   onSelect: () => void;
   isSpecialBadge?: string;
+  isFinalRound?: boolean;
 }
 
-const MatchCard: React.FC<MatchCardProps> = ({ match, allMatches, searchTerm, onSelect, isSpecialBadge }) => {
+const MatchCard: React.FC<MatchCardProps> = ({ match, allMatches, searchTerm, onSelect, isSpecialBadge, isFinalRound }) => {
   const isMatchCompleted = match.status === 'completed';
   const isBye = match.status === 'bye';
 
@@ -310,9 +449,10 @@ const MatchCard: React.FC<MatchCardProps> = ({ match, allMatches, searchTerm, on
   const isT1Highlighted = isT1Real && searchTerm && match.team1_name.toLowerCase().includes(searchTerm.toLowerCase());
   const isT2Highlighted = isT2Real && searchTerm && match.team2_name.toLowerCase().includes(searchTerm.toLowerCase());
 
-  // Feeder matches mapping for waiting slots
-  const feeder1 = allMatches.find((m) => m.next_match_id === match.id && m.next_match_slot === 1);
-  const feeder2 = allMatches.find((m) => m.next_match_id === match.id && m.next_match_slot === 2);
+  // Connector lines logic
+  const hasNextMatch = Boolean(match.next_match_id) && !isSpecialBadge;
+  const nextSlot = match.next_match_slot || 1;
+  const isTargetOfFeeders = allMatches.some((m) => m.next_match_id === match.id) && !isSpecialBadge;
 
   // Next round target match
   const nextMatch = match.next_match_id ? allMatches.find((m) => m.id === match.next_match_id) : undefined;
@@ -334,16 +474,35 @@ const MatchCard: React.FC<MatchCardProps> = ({ match, allMatches, searchTerm, on
   };
 
   return (
-    <div
-      onClick={onSelect}
-      className={`group relative bg-slate-800 rounded-xl border transition-all duration-200 cursor-pointer overflow-hidden shadow-lg hover:shadow-2xl hover:-translate-y-0.5 ${
-        isMatchCompleted
-          ? 'border-emerald-500/50 bg-slate-800/90'
-          : isBye
-          ? 'border-slate-700 opacity-80'
-          : 'border-slate-700 hover:border-red-500'
-      }`}
-    >
+    <div className="relative group/card my-auto">
+      {/* Left connector line (incoming from feeder matches) */}
+      {isTargetOfFeeders && (
+        <div className="hidden lg:block absolute -left-6 top-1/2 w-6 border-t-2 border-slate-600/80 pointer-events-none z-0" />
+      )}
+
+      {/* Right connector line (outgoing to next round match) */}
+      {hasNextMatch && (
+        <div
+          className={`hidden lg:block absolute -right-6 ${
+            nextSlot === 1
+              ? 'top-1/2 h-[calc(100%+1.5rem)] border-r-2 border-t-2 border-slate-600/80 rounded-tr-md'
+              : 'bottom-1/2 h-[calc(100%+1.5rem)] border-r-2 border-b-2 border-slate-600/80 rounded-br-md'
+          } w-6 pointer-events-none z-0`}
+        />
+      )}
+
+      <div
+        onClick={onSelect}
+        className={`group relative z-10 bg-slate-800 rounded-xl border transition-all duration-200 cursor-pointer overflow-hidden shadow-lg hover:shadow-2xl hover:-translate-y-0.5 ${
+          isMatchCompleted
+            ? 'border-emerald-500/50 bg-slate-800/90'
+            : isBye
+            ? 'border-slate-700 opacity-80'
+            : isFinalRound
+            ? 'border-amber-500/60 hover:border-amber-400'
+            : 'border-slate-700 hover:border-red-500'
+        }`}
+      >
       {/* Top Header Bar */}
       <div className="px-3 py-1.5 bg-slate-850 border-b border-slate-700/70 flex items-center justify-between text-[11px] text-slate-400">
         <div className="flex items-center gap-1.5">
@@ -467,6 +626,7 @@ const MatchCard: React.FC<MatchCardProps> = ({ match, allMatches, searchTerm, on
           {isMatchCompleted ? 'Koreksi / Edit' : 'Input Skor'} <Edit3 className="w-3 h-3" />
         </span>
       </div>
+    </div>
     </div>
   );
 };
