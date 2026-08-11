@@ -3,7 +3,7 @@ import { Match, Tournament, Role, Team } from '../types';
 import { Calendar, Clock, MapPin, Filter, Edit3, CheckCircle, Play, AlertCircle, Save, ArrowLeftRight } from 'lucide-react';
 import { updateMatches } from '../lib/db';
 import { notifyScheduleUpdate } from '../lib/telegram';
-import { formatShortDate } from '../lib/bracketEngine';
+import { formatShortDate, ensureDualBranchCrossSessionLinks } from '../lib/bracketEngine';
 
 interface ScheduleViewProps {
   tournament: Tournament | undefined;
@@ -22,7 +22,7 @@ export const ScheduleView: React.FC<ScheduleViewProps> = ({
 }) => {
   if (!tournament) return null;
 
-  const tournamentMatches = matches.filter((m) => m.tournament_id === tournament.id);
+  const tournamentMatches = ensureDualBranchCrossSessionLinks(matches.filter((m) => m.tournament_id === tournament.id));
   const tournamentTeams = (teams || []).filter((t) => t.tournament_id === tournament.id);
 
   const [statusFilter, setStatusFilter] = useState<'all' | 'scheduled' | 'live' | 'completed'>('all');

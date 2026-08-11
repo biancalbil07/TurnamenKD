@@ -4,7 +4,7 @@ import { Trophy, Clock, MapPin, Search, ZoomIn, ZoomOut, RotateCcw, AlertCircle,
 import confetti from 'canvas-confetti';
 import { toPng, toBlob } from 'html-to-image';
 import { sendTelegramBot2Photo } from '../lib/telegram';
-import { formatShortDate } from '../lib/bracketEngine';
+import { formatShortDate, ensureDualBranchCrossSessionLinks } from '../lib/bracketEngine';
 
 interface BracketViewProps {
   tournament: Tournament | undefined;
@@ -41,8 +41,9 @@ export const BracketView: React.FC<BracketViewProps> = ({
     );
   }
 
-  const tourMatches = matches.filter((m) => m.tournament_id === tournament.id && !m.is_third_place);
-  const thirdPlaceMatch = matches.find((m) => m.tournament_id === tournament.id && m.is_third_place);
+  const allTourMatches = ensureDualBranchCrossSessionLinks(matches.filter((m) => m.tournament_id === tournament.id));
+  const tourMatches = allTourMatches.filter((m) => !m.is_third_place);
+  const thirdPlaceMatch = allTourMatches.find((m) => m.is_third_place);
 
   if (tourMatches.length === 0) {
     return (

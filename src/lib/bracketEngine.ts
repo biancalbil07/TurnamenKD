@@ -556,36 +556,134 @@ export function generateKnockoutMatches(
   if (mSub && eSub) {
     // Both Sub-Brackets Exist (Dual Branch)
     const maxInternalRounds = Math.max(mSub.rounds, eSub.rounds);
-    totalRounds = maxInternalRounds + 1; // Last round is Grand Final (Cross-Session)
+    const sfRoundNum = maxInternalRounds + 1;
+    const finalRoundNum = maxInternalRounds + 2;
+    totalRounds = finalRoundNum;
 
-    // Combine matches for rounds 1..maxInternalRounds
-    for (let r = 1; r <= maxInternalRounds; r++) {
-      const roundMatches: Match[] = [];
-
-      const mMatchList = mSub.matchesByRound[r - 1];
-      if (mMatchList) {
-        roundMatches.push(...mMatchList);
+    // Construct Bridge Matches if mSub or eSub has fewer internal rounds than maxInternalRounds
+    // This ensures Morning & Evening branches have symmetrical round progression (no shortcuts to Grand Final)
+    const mBridgeMatches: Match[] = [];
+    if (mSub.rounds < maxInternalRounds) {
+      for (let r = mSub.rounds + 1; r <= maxInternalRounds; r++) {
+        const roundName = `Babak Lanjutan Pagi (R${r})`;
+        const bridgeMatch: Match = {
+          id: `match_${tournamentId}_M_bridge_r${r}`,
+          tournament_id: tournamentId,
+          round_number: r,
+          round_name: roundName,
+          match_code: `M-BRIDGE-R${r}`,
+          team1_id: null,
+          team2_id: null,
+          team1_name: 'TBD',
+          team2_name: 'BYE',
+          team1_score: null,
+          team2_score: null,
+          winner_id: null,
+          next_match_id: null,
+          next_match_slot: 1,
+          status: 'scheduled',
+          venue: 'Lapangan Utama',
+          date: startDateStr,
+          time: '23:00',
+          time_slot: '23:00 - Selesai',
+          updated_at: now,
+        };
+        mBridgeMatches.push(bridgeMatch);
       }
-
-      const eMatchList = eSub.matchesByRound[r - 1];
-      if (eMatchList) {
-        roundMatches.push(...eMatchList);
-      }
-
-      overallMatchesByRound.push(roundMatches);
     }
 
-    // Grand Final Match (Round maxInternalRounds + 1)
+    const eBridgeMatches: Match[] = [];
+    if (eSub.rounds < maxInternalRounds) {
+      for (let r = eSub.rounds + 1; r <= maxInternalRounds; r++) {
+        const roundName = `Babak Lanjutan Sore (R${r})`;
+        const bridgeMatch: Match = {
+          id: `match_${tournamentId}_E_bridge_r${r}`,
+          tournament_id: tournamentId,
+          round_number: r,
+          round_name: roundName,
+          match_code: `E-BRIDGE-R${r}`,
+          team1_id: null,
+          team2_id: null,
+          team1_name: 'TBD',
+          team2_name: 'BYE',
+          team1_score: null,
+          team2_score: null,
+          winner_id: null,
+          next_match_id: null,
+          next_match_slot: 1,
+          status: 'scheduled',
+          venue: 'Lapangan Utama',
+          date: startDateStr,
+          time: '23:00',
+          time_slot: '23:00 - Selesai',
+          updated_at: now,
+        };
+        eBridgeMatches.push(bridgeMatch);
+      }
+    }
+
+    // Semifinal Lintas Sesi Matches (Round sfRoundNum)
+    const sf1Match: Match = {
+      id: `match_${tournamentId}_SF1`,
+      tournament_id: tournamentId,
+      round_number: sfRoundNum,
+      round_name: 'Semifinal Lintas Sesi 1',
+      match_code: 'SF-LINTAS-1',
+      team1_id: null,
+      team2_id: null,
+      team1_name: 'Juara Sesi Pagi',
+      team2_name: 'Runner-up Sesi Sore',
+      team1_score: null,
+      team2_score: null,
+      winner_id: null,
+      next_match_id: `match_${tournamentId}_GF`,
+      next_match_slot: 1,
+      loser_next_match_id: `match_${tournamentId}_3rd`,
+      loser_next_match_slot: 1,
+      status: 'scheduled',
+      venue: 'Lapangan Utama',
+      date: startDateStr,
+      time: '23:00',
+      time_slot: '23:00 - Selesai',
+      updated_at: now,
+    };
+
+    const sf2Match: Match = {
+      id: `match_${tournamentId}_SF2`,
+      tournament_id: tournamentId,
+      round_number: sfRoundNum,
+      round_name: 'Semifinal Lintas Sesi 2',
+      match_code: 'SF-LINTAS-2',
+      team1_id: null,
+      team2_id: null,
+      team1_name: 'Juara Sesi Sore',
+      team2_name: 'Runner-up Sesi Pagi',
+      team1_score: null,
+      team2_score: null,
+      winner_id: null,
+      next_match_id: `match_${tournamentId}_GF`,
+      next_match_slot: 2,
+      loser_next_match_id: `match_${tournamentId}_3rd`,
+      loser_next_match_slot: 2,
+      status: 'scheduled',
+      venue: 'Lapangan Utama',
+      date: startDateStr,
+      time: '23:00',
+      time_slot: '23:00 - Selesai',
+      updated_at: now,
+    };
+
+    // Grand Final Match (Round finalRoundNum)
     const grandFinalMatch: Match = {
       id: `match_${tournamentId}_GF`,
       tournament_id: tournamentId,
-      round_number: totalRounds,
+      round_number: finalRoundNum,
       round_name: 'Grand Final (Pagi vs Sore)',
       match_code: 'GRAND-FINAL',
       team1_id: null,
       team2_id: null,
-      team1_name: 'Juara Sesi Pagi',
-      team2_name: 'Juara Sesi Sore',
+      team1_name: 'Pemenang Semifinal 1',
+      team2_name: 'Pemenang Semifinal 2',
       team1_score: null,
       team2_score: null,
       winner_id: null,
@@ -599,16 +697,79 @@ export function generateKnockoutMatches(
       updated_at: now,
     };
 
-    // Connect Morning Final & Evening Final to Grand Final
-    if (mSub.finalMatch) {
-      mSub.finalMatch.next_match_id = grandFinalMatch.id;
-      mSub.finalMatch.next_match_slot = 1;
-    }
-    if (eSub.finalMatch) {
-      eSub.finalMatch.next_match_id = grandFinalMatch.id;
-      eSub.finalMatch.next_match_slot = 2;
+    // Connect Morning Branch to Semifinals
+    if (mBridgeMatches.length > 0) {
+      if (mSub.finalMatch) {
+        mSub.finalMatch.next_match_id = mBridgeMatches[0].id;
+        mSub.finalMatch.next_match_slot = 1;
+        mSub.finalMatch.loser_next_match_id = sf2Match.id;
+        mSub.finalMatch.loser_next_match_slot = 2;
+      }
+      for (let i = 0; i < mBridgeMatches.length - 1; i++) {
+        mBridgeMatches[i].next_match_id = mBridgeMatches[i + 1].id;
+        mBridgeMatches[i].next_match_slot = 1;
+      }
+      mBridgeMatches[mBridgeMatches.length - 1].next_match_id = sf1Match.id;
+      mBridgeMatches[mBridgeMatches.length - 1].next_match_slot = 1;
+    } else {
+      if (mSub.finalMatch) {
+        mSub.finalMatch.next_match_id = sf1Match.id;
+        mSub.finalMatch.next_match_slot = 1;
+        mSub.finalMatch.loser_next_match_id = sf2Match.id;
+        mSub.finalMatch.loser_next_match_slot = 2;
+      }
     }
 
+    // Connect Evening Branch to Semifinals
+    if (eBridgeMatches.length > 0) {
+      if (eSub.finalMatch) {
+        eSub.finalMatch.next_match_id = eBridgeMatches[0].id;
+        eSub.finalMatch.next_match_slot = 1;
+        eSub.finalMatch.loser_next_match_id = sf1Match.id;
+        eSub.finalMatch.loser_next_match_slot = 2;
+      }
+      for (let i = 0; i < eBridgeMatches.length - 1; i++) {
+        eBridgeMatches[i].next_match_id = eBridgeMatches[i + 1].id;
+        eBridgeMatches[i].next_match_slot = 1;
+      }
+      eBridgeMatches[eBridgeMatches.length - 1].next_match_id = sf2Match.id;
+      eBridgeMatches[eBridgeMatches.length - 1].next_match_slot = 1;
+    } else {
+      if (eSub.finalMatch) {
+        eSub.finalMatch.next_match_id = sf2Match.id;
+        eSub.finalMatch.next_match_slot = 1;
+        eSub.finalMatch.loser_next_match_id = sf1Match.id;
+        eSub.finalMatch.loser_next_match_slot = 2;
+      }
+    }
+
+    // Combine matches for internal rounds (1..maxInternalRounds)
+    for (let r = 1; r <= maxInternalRounds; r++) {
+      const roundMatches: Match[] = [];
+
+      if (r <= mSub.rounds) {
+        const mList = mSub.matchesByRound[r - 1];
+        if (mList) roundMatches.push(...mList);
+      } else {
+        const bMatch = mBridgeMatches.find((bm) => bm.round_number === r);
+        if (bMatch) roundMatches.push(bMatch);
+      }
+
+      if (r <= eSub.rounds) {
+        const eList = eSub.matchesByRound[r - 1];
+        if (eList) roundMatches.push(...eList);
+      } else {
+        const bMatch = eBridgeMatches.find((bm) => bm.round_number === r);
+        if (bMatch) roundMatches.push(bMatch);
+      }
+
+      overallMatchesByRound.push(roundMatches);
+    }
+
+    // Round sfRoundNum: Semifinal Lintas Sesi
+    overallMatchesByRound.push([sf1Match, sf2Match]);
+
+    // Round finalRoundNum: Grand Final & Perebutan Juara 3
     const finalRoundMatches: Match[] = [grandFinalMatch];
 
     // Perebutan Juara 3 (3rd Place Match)
@@ -616,13 +777,13 @@ export function generateKnockoutMatches(
       const thirdPlaceMatch: Match = {
         id: `match_${tournamentId}_3rd`,
         tournament_id: tournamentId,
-        round_number: totalRounds,
+        round_number: finalRoundNum,
         round_name: 'Perebutan Juara 3',
         match_code: '3RD-PLACE',
         team1_id: null,
         team2_id: null,
-        team1_name: 'Runner-up Sesi Pagi',
-        team2_name: 'Runner-up Sesi Sore',
+        team1_name: 'Kalah Semifinal 1',
+        team2_name: 'Kalah Semifinal 2',
         team1_score: null,
         team2_score: null,
         winner_id: null,
@@ -730,12 +891,158 @@ export function generateKnockoutMatches(
   return applyAutoProgression(allMatches);
 }
 
+export function ensureDualBranchCrossSessionLinks(matches: Match[]): Match[] {
+  if (!matches || matches.length === 0) return matches;
+
+  const matchesMap = new Map<string, Match>(matches.map((m) => [m.id, { ...m }]));
+  const matchArray = Array.from(matchesMap.values());
+
+  // Find Morning and Evening internal matches
+  const morningMatches = matchArray.filter((m) => m.id.includes('_M_r'));
+  const eveningMatches = matchArray.filter((m) => m.id.includes('_E_r'));
+
+  if (morningMatches.length === 0 || eveningMatches.length === 0) {
+    return matches;
+  }
+
+  // Find max internal round for Morning & Evening branches
+  const maxMRound = Math.max(...morningMatches.map((m) => m.round_number));
+  const maxERound = Math.max(...eveningMatches.map((m) => m.round_number));
+  const maxInternalRounds = Math.max(maxMRound, maxERound);
+
+  const mFinalMatch = morningMatches.find((m) => m.round_number === maxMRound);
+  const eFinalMatch = eveningMatches.find((m) => m.round_number === maxERound);
+
+  if (!mFinalMatch || !eFinalMatch) return matches;
+
+  const tournamentId = mFinalMatch.tournament_id;
+  const sf1Id = `match_${tournamentId}_SF1`;
+  const sf2Id = `match_${tournamentId}_SF2`;
+  const gfId = `match_${tournamentId}_GF`;
+  const thirdId = `match_${tournamentId}_3rd`;
+
+  let sf1Match = matchesMap.get(sf1Id);
+  let sf2Match = matchesMap.get(sf2Id);
+  let grandFinalMatch = matchesMap.get(gfId);
+  let thirdPlaceMatch = matchesMap.get(thirdId);
+
+  const sfRoundNum = maxInternalRounds + 1;
+  const finalRoundNum = maxInternalRounds + 2;
+
+  // Create SF1 if missing
+  if (!sf1Match) {
+    sf1Match = {
+      id: sf1Id,
+      tournament_id: tournamentId,
+      round_number: sfRoundNum,
+      round_name: 'Semifinal Lintas Sesi 1',
+      match_code: 'SF-LINTAS-1',
+      team1_id: null,
+      team2_id: null,
+      team1_name: 'Juara Sesi Pagi',
+      team2_name: 'Runner-up Sesi Sore',
+      team1_score: null,
+      team2_score: null,
+      winner_id: null,
+      next_match_id: gfId,
+      next_match_slot: 1,
+      loser_next_match_id: thirdId,
+      loser_next_match_slot: 1,
+      status: 'scheduled',
+      venue: 'Lapangan Utama',
+      date: mFinalMatch.date || '2026-08-10',
+      time: '23:00',
+      time_slot: '23:00 - Selesai',
+      updated_at: new Date().toISOString(),
+    };
+    matchesMap.set(sf1Id, sf1Match);
+  } else {
+    sf1Match.round_number = sfRoundNum;
+    sf1Match.match_code = 'SF-LINTAS-1';
+    sf1Match.round_name = 'Semifinal Lintas Sesi 1';
+    sf1Match.next_match_id = gfId;
+    sf1Match.next_match_slot = 1;
+    sf1Match.loser_next_match_id = thirdId;
+    sf1Match.loser_next_match_slot = 1;
+  }
+
+  // Create SF2 if missing
+  if (!sf2Match) {
+    sf2Match = {
+      id: sf2Id,
+      tournament_id: tournamentId,
+      round_number: sfRoundNum,
+      round_name: 'Semifinal Lintas Sesi 2',
+      match_code: 'SF-LINTAS-2',
+      team1_id: null,
+      team2_id: null,
+      team1_name: 'Juara Sesi Sore',
+      team2_name: 'Runner-up Sesi Pagi',
+      team1_score: null,
+      team2_score: null,
+      winner_id: null,
+      next_match_id: gfId,
+      next_match_slot: 2,
+      loser_next_match_id: thirdId,
+      loser_next_match_slot: 2,
+      status: 'scheduled',
+      venue: 'Lapangan Utama',
+      date: eFinalMatch.date || '2026-08-10',
+      time: '23:00',
+      time_slot: '23:00 - Selesai',
+      updated_at: new Date().toISOString(),
+    };
+    matchesMap.set(sf2Id, sf2Match);
+  } else {
+    sf2Match.round_number = sfRoundNum;
+    sf2Match.match_code = 'SF-LINTAS-2';
+    sf2Match.round_name = 'Semifinal Lintas Sesi 2';
+    sf2Match.next_match_id = gfId;
+    sf2Match.next_match_slot = 2;
+    sf2Match.loser_next_match_id = thirdId;
+    sf2Match.loser_next_match_slot = 2;
+  }
+
+  // Update Grand Final round_number & placeholder names
+  if (grandFinalMatch) {
+    grandFinalMatch.round_number = finalRoundNum;
+    if (!grandFinalMatch.team1_id) grandFinalMatch.team1_name = 'Pemenang Semifinal 1';
+    if (!grandFinalMatch.team2_id) grandFinalMatch.team2_name = 'Pemenang Semifinal 2';
+    matchesMap.set(grandFinalMatch.id, grandFinalMatch);
+  }
+
+  if (thirdPlaceMatch) {
+    thirdPlaceMatch.round_number = finalRoundNum;
+    if (!thirdPlaceMatch.team1_id) thirdPlaceMatch.team1_name = 'Kalah Semifinal 1';
+    if (!thirdPlaceMatch.team2_id) thirdPlaceMatch.team2_name = 'Kalah Semifinal 2';
+    matchesMap.set(thirdPlaceMatch.id, thirdPlaceMatch);
+  }
+
+  // Re-link Morning internal final to SF1
+  mFinalMatch.next_match_id = sf1Id;
+  mFinalMatch.next_match_slot = 1;
+  mFinalMatch.loser_next_match_id = sf2Id;
+  mFinalMatch.loser_next_match_slot = 2;
+
+  // Re-link Evening internal final to SF2
+  eFinalMatch.next_match_id = sf2Id;
+  eFinalMatch.next_match_slot = 1;
+  eFinalMatch.loser_next_match_id = sf1Id;
+  eFinalMatch.loser_next_match_slot = 2;
+
+  matchesMap.set(mFinalMatch.id, mFinalMatch);
+  matchesMap.set(eFinalMatch.id, eFinalMatch);
+
+  return Array.from(matchesMap.values());
+}
+
 /**
  * Propagates winners through next_match_id links.
  * Handles both completed matches with winner_id and BYE matches automatically.
  */
 export function applyAutoProgression(matches: Match[]): Match[] {
-  const matchMap = new Map<string, Match>(matches.map((m) => [m.id, { ...m }]));
+  const sanitizedMatches = ensureDualBranchCrossSessionLinks(matches);
+  const matchMap = new Map<string, Match>(sanitizedMatches.map((m) => [m.id, { ...m }]));
 
   let changed = true;
   let maxPasses = 20;
@@ -962,27 +1269,76 @@ export function processMatchScoreUpdate(
     }
   }
 
-  // Handle 3rd Place Match Losers progression if this is a Semifinal
+  // Handle downstream loser progression or reset
+  if (match.loser_next_match_id) {
+    const loserNextMatch = matchesMap.get(match.loser_next_match_id);
+    if (loserNextMatch) {
+      const slot = match.loser_next_match_slot;
+      if (loserId && loserName) {
+        if (slot === 1) {
+          loserNextMatch.team1_id = loserId;
+          loserNextMatch.team1_name = loserName;
+        } else {
+          loserNextMatch.team2_id = loserId;
+          loserNextMatch.team2_name = loserName;
+        }
+      } else {
+        if (slot === 1) {
+          loserNextMatch.team1_id = null;
+          loserNextMatch.team1_name = 'TBD';
+        } else {
+          loserNextMatch.team2_id = null;
+          loserNextMatch.team2_name = 'TBD';
+        }
+      }
+      matchesMap.set(loserNextMatch.id, loserNextMatch);
+    }
+  }
+
+  // Handle 3rd Place Match Losers progression if this is a Semifinal or session final
   const thirdPlaceMatch = Array.from(matchesMap.values()).find((m) => m.is_third_place);
-  if (thirdPlaceMatch && match.round_name === 'Semifinal') {
-    if (loserId && loserName) {
-      if (match.next_match_slot === 1) {
+  if (thirdPlaceMatch) {
+    const isMorningInternalFinal = match.round_name.includes('Pagi') || (match.id.includes('_M_r') && !match.id.includes('bridge'));
+    const isEveningInternalFinal = match.round_name.includes('Sore') || (match.id.includes('_E_r') && !match.id.includes('bridge'));
+
+    if (isMorningInternalFinal) {
+      if (loserId && loserName) {
         thirdPlaceMatch.team1_id = loserId;
         thirdPlaceMatch.team1_name = loserName;
       } else {
+        thirdPlaceMatch.team1_id = null;
+        thirdPlaceMatch.team1_name = 'Runner-up Sesi Pagi';
+      }
+      matchesMap.set(thirdPlaceMatch.id, thirdPlaceMatch);
+    } else if (isEveningInternalFinal) {
+      if (loserId && loserName) {
         thirdPlaceMatch.team2_id = loserId;
         thirdPlaceMatch.team2_name = loserName;
-      }
-    } else {
-      if (match.next_match_slot === 1) {
-        thirdPlaceMatch.team1_id = null;
-        thirdPlaceMatch.team1_name = 'Kalah Semifinal 1';
       } else {
         thirdPlaceMatch.team2_id = null;
-        thirdPlaceMatch.team2_name = 'Kalah Semifinal 2';
+        thirdPlaceMatch.team2_name = 'Runner-up Sesi Sore';
       }
+      matchesMap.set(thirdPlaceMatch.id, thirdPlaceMatch);
+    } else if (match.round_name === 'Semifinal' || match.round_name.includes('Semifinal')) {
+      if (loserId && loserName) {
+        if (match.next_match_slot === 1) {
+          thirdPlaceMatch.team1_id = loserId;
+          thirdPlaceMatch.team1_name = loserName;
+        } else {
+          thirdPlaceMatch.team2_id = loserId;
+          thirdPlaceMatch.team2_name = loserName;
+        }
+      } else {
+        if (match.next_match_slot === 1) {
+          thirdPlaceMatch.team1_id = null;
+          thirdPlaceMatch.team1_name = 'Kalah Semifinal 1';
+        } else {
+          thirdPlaceMatch.team2_id = null;
+          thirdPlaceMatch.team2_name = 'Kalah Semifinal 2';
+        }
+      }
+      matchesMap.set(thirdPlaceMatch.id, thirdPlaceMatch);
     }
-    matchesMap.set(thirdPlaceMatch.id, thirdPlaceMatch);
   }
 
   const updatedList = applyAutoProgression(Array.from(matchesMap.values()));
