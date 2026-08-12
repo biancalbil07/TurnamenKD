@@ -148,9 +148,21 @@ export const BracketView: React.FC<BracketViewProps> = ({
     setStatusMsg(null);
 
     try {
-      const dataUrl = await toPng(bracketRef.current, {
+      const el = bracketRef.current;
+      const fullWidth = el.scrollWidth + 32;
+      const fullHeight = el.scrollHeight + 32;
+
+      const dataUrl = await toPng(el, {
         cacheBust: true,
         backgroundColor: '#0f172a',
+        width: fullWidth,
+        height: fullHeight,
+        style: {
+          overflow: 'visible',
+          transform: 'none',
+          width: `${fullWidth}px`,
+          height: `${fullHeight}px`,
+        },
       });
       const link = document.createElement('a');
       link.download = `Bagan_${tournament.name.replace(/\s+/g, '_')}.png`;
@@ -172,9 +184,21 @@ export const BracketView: React.FC<BracketViewProps> = ({
     setStatusMsg(null);
 
     try {
-      const blob = await toBlob(bracketRef.current, {
+      const el = bracketRef.current;
+      const fullWidth = el.scrollWidth + 32;
+      const fullHeight = el.scrollHeight + 32;
+
+      const blob = await toBlob(el, {
         cacheBust: true,
         backgroundColor: '#0f172a',
+        width: fullWidth,
+        height: fullHeight,
+        style: {
+          overflow: 'visible',
+          transform: 'none',
+          width: `${fullWidth}px`,
+          height: `${fullHeight}px`,
+        },
       });
 
       if (!blob) {
